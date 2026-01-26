@@ -1,10 +1,10 @@
 use crate::action::Action;
 use crate::components::Component;
 use crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::{Alignment, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 use std::path::PathBuf;
 use syntect::highlighting::FontStyle;
@@ -20,6 +20,7 @@ pub struct CodeViewer {
     search_query: String,
     search_matches: Vec<usize>,
     current_match: usize,
+    search_list_state: ListState,
 }
 
 impl CodeViewer {
@@ -35,6 +36,7 @@ impl CodeViewer {
             search_query: String::new(),
             search_matches: Vec::new(),
             current_match: 0,
+            search_list_state: ListState::default(),
         }
     }
 
@@ -152,6 +154,7 @@ impl CodeViewer {
         self.current_match = 0;
 
         if self.search_query.is_empty() {
+            self.search_list_state.select(None);
             return;
         }
 
@@ -164,6 +167,9 @@ impl CodeViewer {
 
         if !self.search_matches.is_empty() {
             self.scroll_offset = self.search_matches[0];
+            self.search_list_state.select(Some(0));
+        } else {
+            self.search_list_state.select(None);
         }
     }
 
@@ -173,6 +179,7 @@ impl CodeViewer {
         }
         self.current_match = (self.current_match + 1) % self.search_matches.len();
         self.scroll_offset = self.search_matches[self.current_match];
+        self.search_list_state.select(Some(self.current_match));
     }
 
     fn prev_match(&mut self) {
@@ -185,6 +192,7 @@ impl CodeViewer {
             self.current_match - 1
         };
         self.scroll_offset = self.search_matches[self.current_match];
+        self.search_list_state.select(Some(self.current_match));
     }
 
     pub fn is_search_mode(&self) -> bool {
@@ -400,15 +408,8 @@ impl Component for CodeViewer {
             .border_style(border_style)
             .title(title);
 
-        if self.search_mode {
-            let match_info = if self.search_matches.is_empty() {
-                "No matches".to_string()
-            } else {
-                format!("{}/{}", self.current_match + 1, self.search_matches.len())
-            };
-            let search_title = format!(" /{} [{}] ", self.search_query, match_info);
-            block = block.title_bottom(Line::from(search_title).style(Style::default().fg(Color::Yellow)));
-        } else if !self.search_query.is_empty() && !self.search_matches.is_empty() {
+        // Show match count when not in search mode but have matches
+        if !self.search_mode && !self.search_query.is_empty() && !self.search_matches.is_empty() {
             let match_info = format!(" {}/{} matches ", self.current_match + 1, self.search_matches.len());
             block = block.title_bottom(Line::from(match_info).style(Style::default().fg(Color::Rgb(0xff, 0x7a, 0x5c))));
         }
@@ -436,5 +437,139 @@ impl Component for CodeViewer {
 
         let paragraph = Paragraph::new(visible_lines).block(block);
         frame.render_widget(paragraph, area);
+
+        // Render search modal on top if active
+        if self.search_mode {
+            Self::render_search_modal_static(
+                frame,
+                area,
+                &self.search_query,
+                &self.search_matches,
+                self.current_match,
+                &self.content,
+                &mut self.search_list_state,
+            );
+        }
+    }
+}
+
+impl CodeViewer {
+    fn render_search_modal_static(
+        frame: &mut Frame,
+        area: Rect,
+        search_query: &str,
+        search_matches: &[usize],
+        current_match: usize,
+        content: &[String],
+        search_list_state: &mut ListState,
+    ) {
+        let orange = Color::Rgb(0xff, 0x7a, 0x5c);
+        let dark_orange = Color::Rgb(0xe6, 0x5a, 0x3d);
+        let dark_bg = Color::Rgb(0x1a, 0x1a, 0x2e);
+        let dark_text = Color::Rgb(0x1a, 0x12, 0x0f);
+
+        // Modal size
+        let modal_width = (area.width as f32 * 0.7).min(70.0) as u16;
+        let modal_height = (area.height as f32 * 0.5).min(20.0) as u16;
+
+        let modal_area = Rect {
+            x: area.x + (area.width - modal_width) / 2,
+            y: area.y + (area.height - modal_height) / 2,
+            width: modal_width,
+            height: modal_height,
+        };
+
+        // Clear behind modal
+        frame.render_widget(Clear, modal_area);
+
+        // Modal block
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(orange))
+            .style(Style::default().bg(dark_bg))
+            .title(Line::from(vec![
+                Span::styled(" \u{f002} ", Style::default().fg(orange)),
+                Span::styled("Search in File", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::raw(" "),
+            ]));
+
+        let inner = block.inner(modal_area);
+        frame.render_widget(block, modal_area);
+
+        // Layout
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Input
+                Constraint::Min(1),    // Results
+            ])
+            .split(inner);
+
+        // Search input
+        let input_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray))
+            .style(Style::default().bg(dark_bg));
+
+        let cursor = "▌";
+        let match_info = if search_matches.is_empty() {
+            if search_query.is_empty() {
+                String::new()
+            } else {
+                " (no matches)".to_string()
+            }
+        } else {
+            format!(" ({}/{})", current_match + 1, search_matches.len())
+        };
+
+        let input_text = Line::from(vec![
+            Span::styled("\u{f002} ", Style::default().fg(orange)),
+            Span::raw(search_query),
+            Span::styled(cursor, Style::default().fg(orange)),
+            Span::styled(match_info, Style::default().fg(Color::DarkGray)),
+        ]);
+
+        let input = Paragraph::new(input_text)
+            .block(input_block)
+            .style(Style::default().fg(Color::White));
+
+        frame.render_widget(input, layout[0]);
+
+        // Results - show matching lines preview
+        let items: Vec<ListItem> = search_matches
+            .iter()
+            .take(15)
+            .map(|&line_idx| {
+                let line_num = format!("{:>4}", line_idx + 1);
+                let line_content = content.get(line_idx).map(|s| s.trim()).unwrap_or("");
+                let truncated = if line_content.len() > 50 {
+                    format!("{}...", &line_content[..50])
+                } else {
+                    line_content.to_string()
+                };
+
+                let line = Line::from(vec![
+                    Span::styled(format!("{} ", line_num), Style::default().fg(orange)),
+                    Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(truncated, Style::default().fg(Color::White)),
+                ]);
+
+                ListItem::new(line)
+            })
+            .collect();
+
+        let highlight_style = Style::default()
+            .bg(dark_orange)
+            .fg(dark_text)
+            .add_modifier(Modifier::BOLD);
+
+        let results_block = Block::default().style(Style::default().bg(dark_bg));
+
+        let list = List::new(items)
+            .block(results_block)
+            .highlight_style(highlight_style)
+            .highlight_symbol("▶ ");
+
+        frame.render_stateful_widget(list, layout[1], search_list_state);
     }
 }
