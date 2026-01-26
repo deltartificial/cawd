@@ -244,7 +244,7 @@ impl CodeViewer {
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("  Code Viewer with Syntax Highlighting", Style::default().fg(Color::DarkGray)),
+                Span::styled("  Code Aware Workspace Display", Style::default().fg(Color::DarkGray)),
             ]),
             Line::from(""),
             Line::from(""),

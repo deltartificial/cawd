@@ -2,7 +2,7 @@
 name = "cawd"
 version = "0.1.0"
 edition = "2021"
-description = "A terminal code viewer with syntax highlighting"
+description = "Code Aware Workspace Display - Terminal file explorer with syntax highlighting"
 
 [dependencies]
 ratatui = "0.29"

@@ -9,7 +9,7 @@
    ╚═════╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═════╝
 ```
 
-Terminal file explorer with syntax highlighting.
+Code Aware Workspace Display - Terminal file explorer with syntax highlighting.
 
 ## Install
 
