@@ -5,13 +5,13 @@ edition = "2021"
 description = "Code Aware Workspace Display - Terminal file explorer with syntax highlighting"
 
 [dependencies]
-ratatui = "0.29"
-crossterm = { version = "0.28", features = ["event-stream"] }
+ratatui = "0.30"
+crossterm = { version = "0.29", features = ["event-stream"] }
 devicons = "0.6"
 syntect = "5.2"
-two-face = "0.4"
+two-face = "0.5"
 clap = { version = "4", features = ["derive"] }
 color-eyre = "0.6"
 
 [dev-dependencies]
-two-face = "0.4"
+two-face = "0.5"
