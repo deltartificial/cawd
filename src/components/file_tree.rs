@@ -267,7 +267,7 @@ impl FileTree {
                 } else {
                     self.expanded.insert(node.path);
                 }
-                let _ = self.rebuild_tree();
+                self.rebuild_tree().ok(); // Intentionally ignore: previous state remains valid
                 Action::None
             } else {
                 Action::FileSelected(node.path)
@@ -282,7 +282,7 @@ impl FileTree {
         if let Some(node) = self.selected_node().cloned() {
             if node.is_dir && self.expanded.contains(&node.path) {
                 self.expanded.remove(&node.path);
-                let _ = self.rebuild_tree();
+                self.rebuild_tree().ok(); // Intentionally ignore: previous state remains valid
             } else if node.depth > 0 {
                 if let Some(parent) = node.path.parent() {
                     let parent_path = parent.to_path_buf();
@@ -299,7 +299,7 @@ impl FileTree {
     /// Toggles visibility of hidden files (dotfiles).
     fn toggle_hidden(&mut self) {
         self.show_hidden = !self.show_hidden;
-        let _ = self.rebuild_tree();
+        self.rebuild_tree().ok(); // Intentionally ignore: previous state remains valid
         self.list_state.select(Some(0));
     }
 
