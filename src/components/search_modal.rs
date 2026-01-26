@@ -412,7 +412,7 @@ impl SearchModal {
                 let name_style = if result.is_dir {
                     Style::default().fg(orange).add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(Color::White)
+                    Style::default().fg(result.color)
                 };
                 let path_style = Style::default().fg(Color::DarkGray);
 

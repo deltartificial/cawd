@@ -414,11 +414,11 @@ impl Component for FileTree {
                     Style::default().fg(node.color),
                 ));
 
-                // Name
+                // Name - same color as icon
                 let name_style = if node.is_dir {
                     Style::default().fg(Color::Rgb(0xff, 0x7a, 0x5c)).add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(Color::White)
+                    Style::default().fg(node.color)
                 };
                 spans.push(Span::styled(&node.name, name_style));
 
