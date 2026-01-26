@@ -7,16 +7,15 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 use std::path::PathBuf;
-use syntect::highlighting::{FontStyle, ThemeSet};
-use syntect::parsing::SyntaxSet;
+use syntect::highlighting::FontStyle;
 
 pub struct CodeViewer {
     content: Vec<String>,
     highlighted_lines: Vec<Line<'static>>,
     file_path: Option<PathBuf>,
     scroll_offset: usize,
-    syntax_set: SyntaxSet,
-    theme_set: ThemeSet,
+    syntax_set: syntect::parsing::SyntaxSet,
+    theme_set: syntect::highlighting::ThemeSet,
     search_mode: bool,
     search_query: String,
     search_matches: Vec<usize>,
@@ -30,8 +29,8 @@ impl CodeViewer {
             highlighted_lines: Vec::new(),
             file_path: None,
             scroll_offset: 0,
-            syntax_set: SyntaxSet::load_defaults_newlines(),
-            theme_set: ThemeSet::load_defaults(),
+            syntax_set: two_face::syntax::extra_newlines(),
+            theme_set: two_face::theme::extra().into(),
             search_mode: false,
             search_query: String::new(),
             search_matches: Vec::new(),
