@@ -7,6 +7,7 @@ use crossterm::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use std::io::{self, Stdout};
+use std::panic;
 
 /// Type alias for the terminal with crossterm backend.
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
@@ -29,6 +30,13 @@ pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 /// tui::restore()?;
 /// ```
 pub fn init() -> color_eyre::Result<Tui> {
+    // Set up panic hook to restore terminal on panic
+    let original_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        let _ = restore();
+        original_hook(panic_info);
+    }));
+
     enable_raw_mode()?;
     execute!(io::stdout(), EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(io::stdout());
