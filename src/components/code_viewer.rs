@@ -3,6 +3,16 @@
 use crate::action::Action;
 use crate::components::Component;
 use crossterm::event::{KeyCode, KeyEvent};
+
+/// The display mode for the code viewer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ViewMode {
+    /// Normal syntax-highlighted code view.
+    #[default]
+    Code,
+    /// Git diff view with additions/deletions highlighted.
+    Diff,
+}
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -29,7 +39,7 @@ pub struct CodeViewer {
     current_match: usize,
     search_list_state: ListState,
     animation_frame: u64,
-    diff_mode: bool,
+    view_mode: ViewMode,
 }
 
 impl CodeViewer {
@@ -48,7 +58,7 @@ impl CodeViewer {
             current_match: 0,
             search_list_state: ListState::default(),
             animation_frame: 0,
-            diff_mode: false,
+            view_mode: ViewMode::default(),
         }
     }
 
@@ -68,7 +78,7 @@ impl CodeViewer {
         self.scroll_offset = 0;
         self.search_query.clear();
         self.search_matches.clear();
-        self.diff_mode = false;
+        self.view_mode = ViewMode::Code;
 
         self.highlight_content(&path);
 
@@ -114,7 +124,7 @@ impl CodeViewer {
         self.scroll_offset = 0;
         self.search_query.clear();
         self.search_matches.clear();
-        self.diff_mode = true;
+        self.view_mode = ViewMode::Diff;
 
         self.highlight_diff();
 
@@ -681,7 +691,7 @@ impl Component for CodeViewer {
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
             .map(|n| {
-                if self.diff_mode {
+                if self.view_mode == ViewMode::Diff {
                     format!(" [DIFF] {} ", n)
                 } else {
                     format!(" {} ", n)
