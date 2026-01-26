@@ -92,7 +92,15 @@ impl CodeViewer {
             .or_else(|| self.syntax_set.find_syntax_by_extension(extension))
             .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
 
-        let theme = &self.theme_set.themes["base16-ocean.dark"];
+        let Some(theme) = self.theme_set.themes.get("base16-ocean.dark") else {
+            self.highlighted_lines = self.content.iter().enumerate().map(|(idx, line)| {
+                Line::from(vec![
+                    Span::styled(format!("{:>4} │ ", idx + 1), Style::default().fg(Color::DarkGray)),
+                    Span::raw(line.clone()),
+                ])
+            }).collect();
+            return;
+        };
 
         let mut highlighter = syntect::easy::HighlightLines::new(syntax, theme);
 
@@ -202,8 +210,8 @@ impl CodeViewer {
             }
         }
 
-        if !self.search_matches.is_empty() {
-            self.scroll_offset = self.search_matches[0];
+        if let Some(&first_match) = self.search_matches.first() {
+            self.scroll_offset = first_match;
             self.search_list_state.select(Some(0));
         } else {
             self.search_list_state.select(None);
@@ -212,25 +220,27 @@ impl CodeViewer {
 
     /// Navigates to the next search match.
     fn next_match(&mut self) {
-        if self.search_matches.is_empty() {
+        let len = self.search_matches.len();
+        if len == 0 {
             return;
         }
-        self.current_match = (self.current_match + 1) % self.search_matches.len();
-        self.scroll_offset = self.search_matches[self.current_match];
+        self.current_match = (self.current_match + 1) % len;
+        if let Some(&offset) = self.search_matches.get(self.current_match) {
+            self.scroll_offset = offset;
+        }
         self.search_list_state.select(Some(self.current_match));
     }
 
     /// Navigates to the previous search match.
     fn prev_match(&mut self) {
-        if self.search_matches.is_empty() {
+        let len = self.search_matches.len();
+        if len == 0 {
             return;
         }
-        self.current_match = if self.current_match == 0 {
-            self.search_matches.len() - 1
-        } else {
-            self.current_match - 1
-        };
-        self.scroll_offset = self.search_matches[self.current_match];
+        self.current_match = self.current_match.checked_sub(1).unwrap_or(len.saturating_sub(1));
+        if let Some(&offset) = self.search_matches.get(self.current_match) {
+            self.scroll_offset = offset;
+        }
         self.search_list_state.select(Some(self.current_match));
     }
 
@@ -450,9 +460,9 @@ impl CodeViewer {
             .take(15)
             .map(|&line_idx| {
                 let line_num = format!("{:>4}", line_idx + 1);
-                let line_content = content.get(line_idx).map(|s| s.trim()).unwrap_or("");
-                let truncated = if line_content.len() > 50 {
-                    format!("{}...", &line_content[..50])
+                let line_content = content.get(line_idx).map(|s| s.trim()).unwrap_or_default();
+                let truncated: String = if line_content.chars().count() > 50 {
+                    format!("{}...", line_content.chars().take(50).collect::<String>())
                 } else {
                     line_content.to_string()
                 };

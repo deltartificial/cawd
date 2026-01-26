@@ -158,18 +158,14 @@ impl GitStatus {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines() {
-                    if line.len() < 3 {
-                        continue;
-                    }
+                    let Some(status_code) = line.get(0..2) else { continue };
+                    let Some(file_path) = line.get(3..) else { continue };
+                    let file_path = file_path.trim();
 
-                    let status_code = &line[0..2];
-                    let file_path = line[3..].trim();
-
-                    let file_path = if file_path.contains(" -> ") {
-                        file_path.split(" -> ").last().unwrap_or(file_path)
-                    } else {
-                        file_path
-                    };
+                    let file_path = file_path
+                        .split(" -> ")
+                        .last()
+                        .unwrap_or(file_path);
 
                     let status = Self::parse_status(status_code);
                     let full_path = self.root.join(file_path);
@@ -414,8 +410,8 @@ impl Component for GitStatus {
         let items: Vec<ListItem> = self
             .filtered_indices
             .iter()
-            .map(|&idx| {
-                let file = &self.files[idx];
+            .filter_map(|&idx| self.files.get(idx))
+            .map(|file| {
                 let mut spans: Vec<Span> = Vec::new();
 
                 spans.push(Span::styled(

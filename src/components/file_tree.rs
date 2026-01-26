@@ -426,8 +426,8 @@ impl Component for FileTree {
         let items: Vec<ListItem> = self
             .filtered_indices
             .iter()
-            .map(|&idx| {
-                let node = &self.nodes[idx];
+            .filter_map(|&idx| self.nodes.get(idx))
+            .map(|node| {
                 let mut spans: Vec<Span> = Vec::new();
 
                 for (i, &parent_last) in node.parent_is_last.iter().enumerate() {
