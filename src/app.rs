@@ -246,6 +246,13 @@ impl App {
                 self.handle_action(action)?;
             }
         }
+
+        // Auto-refresh git status every 2 seconds
+        if self.last_git_refresh.elapsed().as_secs() >= 2 {
+            self.git_status.refresh();
+            self.last_git_refresh = Instant::now();
+        }
+
         Ok(())
     }
 
