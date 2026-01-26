@@ -11,7 +11,7 @@
 
 Code Aware Workspace Display - Terminal file explorer with syntax highlighting.
 
-![cawd](assets/image.png)
+![cawd](asset/image.png)
 
 ## Why cawd?
 
