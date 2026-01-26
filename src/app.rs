@@ -1,6 +1,7 @@
 use crate::action::Action;
 use crate::components::code_viewer::CodeViewer;
 use crate::components::file_tree::FileTree;
+use crate::components::git_status::GitStatus;
 use crate::components::help_bar::HelpBar;
 use crate::components::search_modal::SearchModal;
 use crate::components::Component;
@@ -14,11 +15,13 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Panel {
     FileTree,
+    GitStatus,
     CodeViewer,
 }
 
 pub struct App {
     file_tree: FileTree,
+    git_status: GitStatus,
     code_viewer: CodeViewer,
     help_bar: HelpBar,
     search_modal: SearchModal,
@@ -38,6 +41,7 @@ impl App {
 
         Ok(Self {
             file_tree: FileTree::new(path.clone())?,
+            git_status: GitStatus::new(root.clone()),
             code_viewer: CodeViewer::new(),
             help_bar: HelpBar::new(),
             search_modal: SearchModal::new(root.clone()),
@@ -72,22 +76,34 @@ impl App {
         // Render tabs
         self.render_tabs(frame, tabs_area);
 
-        // Content layout
+        // Content layout: left panel (30%) and code viewer (70%)
         let content_layout = Layout::horizontal([
             Constraint::Percentage(30),
             Constraint::Percentage(70),
         ])
         .split(content_area);
 
+        // Split left panel: file tree (75%) and git status (25%)
+        let left_layout = Layout::vertical([
+            Constraint::Percentage(75),
+            Constraint::Percentage(25),
+        ])
+        .split(content_layout[0]);
+
         self.file_tree
-            .render(frame, content_layout[0], self.active_panel == Panel::FileTree);
+            .render(frame, left_layout[0], self.active_panel == Panel::FileTree);
+        self.git_status
+            .render(frame, left_layout[1], self.active_panel == Panel::GitStatus);
         self.code_viewer
             .render(frame, content_layout[1], self.active_panel == Panel::CodeViewer);
 
         // Update help bar context
-        let search_mode = self.file_tree.is_search_mode() || self.code_viewer.is_search_mode();
+        let search_mode = self.file_tree.is_search_mode()
+            || self.git_status.is_search_mode()
+            || self.code_viewer.is_search_mode();
         let in_code_viewer = self.active_panel == Panel::CodeViewer && self.code_viewer.has_file();
-        self.help_bar.set_context(search_mode, in_code_viewer);
+        let in_git_status = self.active_panel == Panel::GitStatus;
+        self.help_bar.set_context(search_mode, in_code_viewer, in_git_status);
         self.help_bar.render(frame, help_area);
 
         // Render search modal on top if active
@@ -161,6 +177,13 @@ impl App {
                     return Ok(());
                 }
 
+                // In git status search mode
+                if self.git_status.is_search_mode() {
+                    let action = self.git_status.handle_key_event(key);
+                    self.handle_action(action)?;
+                    return Ok(());
+                }
+
                 // In code viewer search mode
                 if self.code_viewer.is_search_mode() {
                     let action = self.code_viewer.handle_key_event(key);
@@ -185,8 +208,19 @@ impl App {
 
                 if key.code == KeyCode::Tab {
                     self.active_panel = match self.active_panel {
-                        Panel::FileTree => Panel::CodeViewer,
+                        Panel::FileTree => Panel::GitStatus,
+                        Panel::GitStatus => Panel::CodeViewer,
                         Panel::CodeViewer => Panel::FileTree,
+                    };
+                    return Ok(());
+                }
+
+                // Shift+Tab to go backwards
+                if key.code == KeyCode::BackTab {
+                    self.active_panel = match self.active_panel {
+                        Panel::FileTree => Panel::CodeViewer,
+                        Panel::GitStatus => Panel::FileTree,
+                        Panel::CodeViewer => Panel::GitStatus,
                     };
                     return Ok(());
                 }
@@ -194,6 +228,7 @@ impl App {
                 // Delegate to active panel
                 let action = match self.active_panel {
                     Panel::FileTree => self.file_tree.handle_key_event(key),
+                    Panel::GitStatus => self.git_status.handle_key_event(key),
                     Panel::CodeViewer => self.code_viewer.handle_key_event(key),
                 };
 
@@ -210,6 +245,9 @@ impl App {
                 if let Err(e) = self.code_viewer.load_file(path) {
                     eprintln!("Could not load file: {}", e);
                 }
+                self.active_panel = Panel::CodeViewer;
+                // Refresh git status in case file changes affect it
+                self.git_status.refresh();
             }
             _ => {}
         }

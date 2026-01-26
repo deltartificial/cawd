@@ -7,6 +7,7 @@ use ratatui::Frame;
 pub struct HelpBar {
     search_mode: bool,
     in_code_viewer: bool,
+    in_git_status: bool,
 }
 
 impl HelpBar {
@@ -14,12 +15,14 @@ impl HelpBar {
         Self {
             search_mode: false,
             in_code_viewer: false,
+            in_git_status: false,
         }
     }
 
-    pub fn set_context(&mut self, search_mode: bool, in_code_viewer: bool) {
+    pub fn set_context(&mut self, search_mode: bool, in_code_viewer: bool, in_git_status: bool) {
         self.search_mode = search_mode;
         self.in_code_viewer = in_code_viewer;
+        self.in_git_status = in_git_status;
     }
 
     #[allow(dead_code)]
@@ -53,6 +56,15 @@ impl HelpBar {
                 ("/", "Search"),
                 ("n/N", "Next/Prev"),
                 ("g/G", "Top/Bottom"),
+                ("Tab", "Panel"),
+                ("q", "Quit"),
+            ]
+        } else if self.in_git_status {
+            vec![
+                ("j/k", "Navigate"),
+                ("Enter", "Open"),
+                ("/", "Search"),
+                ("r", "Refresh"),
                 ("Tab", "Panel"),
                 ("q", "Quit"),
             ]
