@@ -59,9 +59,19 @@ impl CodeViewer {
             .and_then(|e| e.to_str())
             .unwrap_or("txt");
 
+        // Map extensions to fallback syntaxes for unsupported languages
+        let mapped_extension = match extension {
+            "sol" => "rs",      // Solidity -> Rust (similar syntax)
+            "vyper" | "vy" => "py", // Vyper -> Python
+            "cairo" => "rs",    // Cairo -> Rust
+            "move" => "rs",     // Move -> Rust
+            ext => ext,
+        };
+
         let syntax = self
             .syntax_set
-            .find_syntax_by_extension(extension)
+            .find_syntax_by_extension(mapped_extension)
+            .or_else(|| self.syntax_set.find_syntax_by_extension(extension))
             .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
 
         let theme = &self.theme_set.themes["base16-ocean.dark"];
