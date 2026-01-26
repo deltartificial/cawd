@@ -128,7 +128,14 @@ impl App {
     }
 
     fn handle_events(&mut self) -> color_eyre::Result<()> {
-        if event::poll(std::time::Duration::from_millis(50))? {
+        // Short poll for smooth animation when on welcome screen
+        let timeout = if !self.code_viewer.has_file() {
+            std::time::Duration::from_millis(50) // 20 fps for animation
+        } else {
+            std::time::Duration::from_millis(100)
+        };
+
+        if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 if key.kind != KeyEventKind::Press {
                     return Ok(());

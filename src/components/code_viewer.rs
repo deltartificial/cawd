@@ -21,6 +21,7 @@ pub struct CodeViewer {
     search_matches: Vec<usize>,
     current_match: usize,
     search_list_state: ListState,
+    animation_frame: u64,
 }
 
 impl CodeViewer {
@@ -37,6 +38,7 @@ impl CodeViewer {
             search_matches: Vec::new(),
             current_match: 0,
             search_list_state: ListState::default(),
+            animation_frame: 0,
         }
     }
 
@@ -220,7 +222,9 @@ impl CodeViewer {
             .and_then(|n| n.to_str())
     }
 
-    fn render_welcome(&self, frame: &mut Frame, area: Rect, focused: bool) {
+    fn render_welcome(&mut self, frame: &mut Frame, area: Rect, focused: bool) {
+        self.animation_frame = self.animation_frame.wrapping_add(1);
+
         let border_style = if focused {
             Style::default().fg(Color::Cyan)
         } else {
@@ -235,87 +239,101 @@ impl CodeViewer {
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
+        let frame_offset = self.animation_frame as f64 * 0.08;
+
+        let logo_lines = [
+            "   ██████╗ █████╗ ██╗    ██╗██████╗ ",
+            "  ██╔════╝██╔══██╗██║    ██║██╔══██╗",
+            "  ██║     ███████║██║ █╗ ██║██║  ██║",
+            "  ██║     ██╔══██║██║███╗██║██║  ██║",
+            "  ╚██████╗██║  ██║╚███╔███╔╝██████╔╝",
+            "   ╚═════╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═════╝ ",
+        ];
+
+        let mut logo: Vec<Line<'static>> = Vec::new();
+        logo.push(Line::from(""));
+        logo.push(Line::from(""));
+
+        // Orange wave effect - each line has different phase
+        for (i, line_text) in logo_lines.iter().enumerate() {
+            let phase = frame_offset + (i as f64 * 0.6);
+            let wave = (phase.sin() + 1.0) / 2.0; // 0.0 to 1.0
+
+            // From dark (#aa4422) to bright orange (#ff7a5c)
+            let r = (0xaa as f64 + (0xff - 0xaa) as f64 * wave) as u8;
+            let g = (0x44 as f64 + (0x7a - 0x44) as f64 * wave) as u8;
+            let b = (0x22 as f64 + (0x5c - 0x22) as f64 * wave) as u8;
+
+            let color = Color::Rgb(r, g, b);
+            logo.push(Line::from(Span::styled(
+                line_text.to_string(),
+                Style::default().fg(color),
+            )));
+        }
+
         let orange = Color::Rgb(0xff, 0x7a, 0x5c);
         let dark_orange = Color::Rgb(0xe6, 0x5a, 0x3d);
 
-        let logo = vec![
-            Line::from(""),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("   ██████╗ █████╗ ██╗    ██╗██████╗ ", Style::default().fg(orange)),
-            ]),
-            Line::from(vec![
-                Span::styled("  ██╔════╝██╔══██╗██║    ██║██╔══██╗", Style::default().fg(orange)),
-            ]),
-            Line::from(vec![
-                Span::styled("  ██║     ███████║██║ █╗ ██║██║  ██║", Style::default().fg(dark_orange)),
-            ]),
-            Line::from(vec![
-                Span::styled("  ██║     ██╔══██║██║███╗██║██║  ██║", Style::default().fg(dark_orange)),
-            ]),
-            Line::from(vec![
-                Span::styled("  ╚██████╗██║  ██║╚███╔███╔╝██████╔╝", Style::default().fg(orange)),
-            ]),
-            Line::from(vec![
-                Span::styled("   ╚═════╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═════╝ ", Style::default().fg(orange)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  Code Aware Workspace Display", Style::default().fg(Color::DarkGray)),
-            ]),
-            Line::from(""),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  Quick Start", Style::default().fg(orange).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  Enter ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
-                Span::styled("Open file / Expand folder", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("  /     ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
-                Span::styled("Search files in tree", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("  j/k   ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
-                Span::styled("Navigate up/down", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("  h/l   ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
-                Span::styled("Collapse/Expand folder", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("  .     ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
-                Span::styled("Toggle hidden files", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("  Tab   ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
-                Span::styled("Switch panel", Style::default().fg(Color::White)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  In Code View", Style::default().fg(orange).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  /     ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
-                Span::styled("Search in file", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("  n/N   ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
-                Span::styled("Next/Previous match", Style::default().fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("  g/G   ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
-                Span::styled("Go to top/bottom", Style::default().fg(Color::White)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  q     ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::styled("Quit", Style::default().fg(Color::White)),
-            ]),
-        ];
+        logo.push(Line::from(""));
+        logo.push(Line::from(Span::styled(
+            "  Code Aware Workspace Display",
+            Style::default().fg(Color::DarkGray),
+        )));
+        logo.push(Line::from(""));
+        logo.push(Line::from(""));
+        logo.push(Line::from(Span::styled(
+            "  Quick Start",
+            Style::default().fg(orange).add_modifier(Modifier::BOLD),
+        )));
+        logo.push(Line::from(""));
+
+        logo.push(Line::from(vec![
+            Span::styled("  Enter ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
+            Span::styled("Open file / Expand folder", Style::default().fg(Color::White)),
+        ]));
+        logo.push(Line::from(vec![
+            Span::styled("  /     ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
+            Span::styled("Search files in tree", Style::default().fg(Color::White)),
+        ]));
+        logo.push(Line::from(vec![
+            Span::styled("  j/k   ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
+            Span::styled("Navigate up/down", Style::default().fg(Color::White)),
+        ]));
+        logo.push(Line::from(vec![
+            Span::styled("  h/l   ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
+            Span::styled("Collapse/Expand folder", Style::default().fg(Color::White)),
+        ]));
+        logo.push(Line::from(vec![
+            Span::styled("  .     ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
+            Span::styled("Toggle hidden files", Style::default().fg(Color::White)),
+        ]));
+        logo.push(Line::from(vec![
+            Span::styled("  Tab   ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
+            Span::styled("Switch panel", Style::default().fg(Color::White)),
+        ]));
+        logo.push(Line::from(""));
+        logo.push(Line::from(Span::styled(
+            "  In Code View",
+            Style::default().fg(orange).add_modifier(Modifier::BOLD),
+        )));
+        logo.push(Line::from(""));
+        logo.push(Line::from(vec![
+            Span::styled("  /     ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
+            Span::styled("Search in file", Style::default().fg(Color::White)),
+        ]));
+        logo.push(Line::from(vec![
+            Span::styled("  n/N   ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
+            Span::styled("Next/Previous match", Style::default().fg(Color::White)),
+        ]));
+        logo.push(Line::from(vec![
+            Span::styled("  g/G   ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
+            Span::styled("Go to top/bottom", Style::default().fg(Color::White)),
+        ]));
+        logo.push(Line::from(""));
+        logo.push(Line::from(vec![
+            Span::styled("  q     ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled("Quit", Style::default().fg(Color::White)),
+        ]));
 
         let paragraph = Paragraph::new(logo).alignment(Alignment::Left);
         frame.render_widget(paragraph, inner);
