@@ -11,6 +11,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::path::PathBuf;
+use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Panel {
@@ -29,6 +30,7 @@ pub struct App {
     should_quit: bool,
     #[allow(dead_code)]
     root: PathBuf,
+    last_git_refresh: Instant,
 }
 
 impl App {
@@ -48,6 +50,7 @@ impl App {
             active_panel: Panel::FileTree,
             should_quit: false,
             root,
+            last_git_refresh: Instant::now(),
         })
     }
 
