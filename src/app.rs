@@ -213,7 +213,7 @@ impl App {
                     if let Some(path) = self.search_modal.handle_key(key) {
                         if path.is_file() {
                             if let Err(e) = self.code_viewer.load_file(path) {
-                                eprintln!("Could not load file: {}", e);
+                                self.code_viewer.show_error(&e.to_string());
                             }
                             self.active_panel = Panel::CodeViewer;
                         }
@@ -298,14 +298,14 @@ impl App {
             Action::Quit => self.should_quit = true,
             Action::FileSelected(path) => {
                 if let Err(e) = self.code_viewer.load_file(path) {
-                    eprintln!("Could not load file: {}", e);
+                    self.code_viewer.show_error(&e.to_string());
                 }
                 self.active_panel = Panel::CodeViewer;
                 self.git_status.refresh();
             }
             Action::DiffSelected(path) => {
                 if let Err(e) = self.code_viewer.load_diff(path) {
-                    eprintln!("Could not load diff: {}", e);
+                    self.code_viewer.show_error(&e.to_string());
                 }
                 self.active_panel = Panel::CodeViewer;
             }

@@ -85,6 +85,36 @@ impl CodeViewer {
         Ok(())
     }
 
+    /// Displays an error message in the viewer.
+    ///
+    /// # Parameters
+    ///
+    /// * `message` - The error message to display.
+    pub fn show_error(&mut self, message: &str) {
+        self.content = vec![
+            String::new(),
+            format!("  Error: {}", message),
+            String::new(),
+        ];
+        self.file_path = None;
+        self.scroll_offset = 0;
+        self.view_mode = ViewMode::Code;
+        self.highlighted_lines = self
+            .content
+            .iter()
+            .enumerate()
+            .map(|(idx, line)| {
+                Line::from(vec![
+                    Span::styled(
+                        format!("{:>4} │ ", idx + 1),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::styled(line.clone(), Style::default().fg(Color::Red)),
+                ])
+            })
+            .collect();
+    }
+
     /// Loads a git diff for the specified file.
     ///
     /// # Parameters
