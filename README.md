@@ -11,6 +11,8 @@
 
 Code Aware Workspace Display - Terminal file explorer with syntax highlighting.
 
+![cawd](assets/image.png)
+
 ## Why cawd?
 
 cawd is designed for **code reading**, not code editing. The idea is simple: when you're using AI coding assistants like Claude Code, Cursor, or Copilot, you need a way to visually verify the code being generated in real-time.
