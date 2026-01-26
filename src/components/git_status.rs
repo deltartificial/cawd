@@ -278,12 +278,10 @@ impl GitStatus {
         self.list_state.select(Some(new_idx));
     }
 
-    /// Selects the current file for viewing.
+    /// Selects the current file for diff viewing.
     fn select_file(&self) -> Action {
         if let Some(file) = self.selected_file() {
-            if file.path.exists() {
-                return Action::FileSelected(file.path.clone());
-            }
+            return Action::DiffSelected(file.path.clone());
         }
         Action::None
     }

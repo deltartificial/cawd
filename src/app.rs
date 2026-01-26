@@ -303,6 +303,12 @@ impl App {
                 self.active_panel = Panel::CodeViewer;
                 self.git_status.refresh();
             }
+            Action::DiffSelected(path) => {
+                if let Err(e) = self.code_viewer.load_diff(path) {
+                    eprintln!("Could not load diff: {}", e);
+                }
+                self.active_panel = Panel::CodeViewer;
+            }
             _ => {}
         }
         Ok(())

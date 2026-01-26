@@ -9,6 +9,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 use std::path::PathBuf;
+use std::process::Command;
 use syntect::highlighting::FontStyle;
 
 /// Code viewer component with syntax highlighting.
@@ -28,6 +29,7 @@ pub struct CodeViewer {
     current_match: usize,
     search_list_state: ListState,
     animation_frame: u64,
+    diff_mode: bool,
 }
 
 impl CodeViewer {
@@ -46,6 +48,7 @@ impl CodeViewer {
             current_match: 0,
             search_list_state: ListState::default(),
             animation_frame: 0,
+            diff_mode: false,
         }
     }
 
@@ -65,10 +68,107 @@ impl CodeViewer {
         self.scroll_offset = 0;
         self.search_query.clear();
         self.search_matches.clear();
+        self.diff_mode = false;
 
         self.highlight_content(&path);
 
         Ok(())
+    }
+
+    /// Loads a git diff for the specified file.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - The path to the file to diff.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success, or an error if git diff fails.
+    pub fn load_diff(&mut self, path: PathBuf) -> color_eyre::Result<()> {
+        let output = Command::new("git")
+            .args(["diff", "HEAD"])
+            .arg(&path)
+            .current_dir(path.parent().unwrap_or(&path))
+            .output()?;
+
+        let diff_content = String::from_utf8_lossy(&output.stdout);
+
+        if diff_content.is_empty() {
+            let staged_output = Command::new("git")
+                .args(["diff", "--cached"])
+                .arg(&path)
+                .current_dir(path.parent().unwrap_or(&path))
+                .output()?;
+
+            let staged_diff = String::from_utf8_lossy(&staged_output.stdout);
+            if staged_diff.is_empty() {
+                self.content = vec!["No changes to display".to_string()];
+            } else {
+                self.content = staged_diff.lines().map(String::from).collect();
+            }
+        } else {
+            self.content = diff_content.lines().map(String::from).collect();
+        }
+
+        self.file_path = Some(path);
+        self.scroll_offset = 0;
+        self.search_query.clear();
+        self.search_matches.clear();
+        self.diff_mode = true;
+
+        self.highlight_diff();
+
+        Ok(())
+    }
+
+    /// Applies diff-specific highlighting with colored backgrounds.
+    fn highlight_diff(&mut self) {
+        let green_bg = Color::Rgb(0x1a, 0x3d, 0x1a);
+        let green_fg = Color::Rgb(0x80, 0xff, 0x80);
+        let red_bg = Color::Rgb(0x3d, 0x1a, 0x1a);
+        let red_fg = Color::Rgb(0xff, 0x80, 0x80);
+
+        let filtered: Vec<&String> = self
+            .content
+            .iter()
+            .filter(|line| {
+                !line.starts_with("diff ")
+                    && !line.starts_with("index ")
+                    && !line.starts_with("---")
+                    && !line.starts_with("+++")
+                    && !line.starts_with("@@")
+                    && !line.starts_with("\\")
+            })
+            .collect();
+
+        let mut line_num = 0usize;
+        self.highlighted_lines = filtered
+            .iter()
+            .map(|line| {
+                line_num += 1;
+                let num_str = format!("{:>4} │ ", line_num);
+                let content = if line.len() > 1 { &line[1..] } else { "" };
+
+                if line.starts_with('+') {
+                    Line::from(vec![
+                        Span::styled(num_str, Style::default().fg(green_fg).bg(green_bg)),
+                        Span::styled(format!("+ {}", content), Style::default().fg(green_fg).bg(green_bg)),
+                    ])
+                } else if line.starts_with('-') {
+                    Line::from(vec![
+                        Span::styled(num_str, Style::default().fg(red_fg).bg(red_bg)),
+                        Span::styled(format!("- {}", content), Style::default().fg(red_fg).bg(red_bg)),
+                    ])
+                } else {
+                    Line::from(vec![
+                        Span::styled(num_str, Style::default().fg(Color::DarkGray)),
+                        Span::styled(format!("  {}", content), Style::default().fg(Color::White)),
+                    ])
+                }
+            })
+            .collect();
+
+        self.content = filtered.iter().map(|s| s.to_string()).collect();
     }
 
     /// Applies syntax highlighting to the loaded content.
@@ -581,7 +681,13 @@ impl Component for CodeViewer {
             .as_ref()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .map(|n| format!(" {} ", n))
+            .map(|n| {
+                if self.diff_mode {
+                    format!(" [DIFF] {} ", n)
+                } else {
+                    format!(" {} ", n)
+                }
+            })
             .unwrap_or_else(|| " Code ".to_string());
 
         let mut block = Block::default()

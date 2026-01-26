@@ -49,6 +49,13 @@ pub enum Action {
     /// * `PathBuf` - The absolute path to the selected file.
     FileSelected(PathBuf),
 
+    /// A file was selected for diff viewing (from git status).
+    ///
+    /// # Parameters
+    ///
+    /// * `PathBuf` - The absolute path to the file to diff.
+    DiffSelected(PathBuf),
+
     /// Toggle visibility of hidden files.
     ToggleHidden,
 
