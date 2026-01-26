@@ -146,7 +146,10 @@ impl GitStatus {
     /// Refreshes the list of changed files from git.
     ///
     /// Runs `git status --porcelain` and parses the output.
+    /// Preserves the current selection if the file still exists.
     pub fn refresh(&mut self) {
+        let selected_path = self.selected_file().map(|f| f.path.clone());
+
         self.files.clear();
 
         let output = Command::new("git")
@@ -190,6 +193,16 @@ impl GitStatus {
         });
 
         self.update_filtered_indices();
+
+        if let Some(path) = selected_path {
+            if let Some(pos) = self.files.iter().position(|f| f.path == path) {
+                if let Some(filtered_pos) = self.filtered_indices.iter().position(|&i| i == pos) {
+                    self.list_state.select(Some(filtered_pos));
+                    return;
+                }
+            }
+        }
+
         if !self.files.is_empty() {
             self.list_state.select(Some(0));
         }
