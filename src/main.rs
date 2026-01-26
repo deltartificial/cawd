@@ -18,7 +18,7 @@ use std::path::PathBuf;
 /// Command-line arguments for cawd.
 #[derive(Parser, Debug)]
 #[command(name = "cawd")]
-#[command(about = "A terminal code viewer with syntax highlighting")]
+#[command(version, about = "A terminal code viewer with syntax highlighting")]
 struct Args {
     /// Path to the directory or file to open.
     /// Defaults to the current directory.
