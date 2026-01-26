@@ -1,6 +1,7 @@
 //! Context-sensitive help bar displaying available keybindings.
 
-use ratatui::layout::Rect;
+use chrono::Local;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
@@ -111,10 +112,26 @@ impl HelpBar {
             spans.push(Span::styled(format!(" {}", desc), desc_style));
         }
 
+        let time_str = Local::now().format(" %H:%M:%S ").to_string();
+        let time_width = time_str.len() as u16;
+
+        let layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(1),
+                Constraint::Length(time_width),
+            ])
+            .split(area);
+
         let line = Line::from(spans);
         let paragraph = Paragraph::new(line).style(Style::default().bg(orange_bg));
+        frame.render_widget(paragraph, layout[0]);
 
-        frame.render_widget(paragraph, area);
+        let time_line = Line::from(vec![
+            Span::styled(time_str, key_style),
+        ]);
+        let time_paragraph = Paragraph::new(time_line).style(Style::default().bg(orange_bg));
+        frame.render_widget(time_paragraph, layout[1]);
     }
 }
 

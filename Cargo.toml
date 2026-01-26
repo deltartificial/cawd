@@ -12,6 +12,7 @@ syntect = "5.2"
 two-face = "0.5"
 clap = { version = "4", features = ["derive"] }
 color-eyre = "0.6"
+chrono = "0.4"
 
 [dev-dependencies]
 two-face = "0.5"
