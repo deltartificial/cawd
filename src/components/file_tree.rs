@@ -62,7 +62,7 @@ impl TreeNode {
             ("\u{f07b}".to_string(), Color::Rgb(0xff, 0x7a, 0x5c))
         } else {
             let file_icon = FileIcon::from(&name);
-            (file_icon.icon.to_string(), Self::devicon_color_to_ratatui(&file_icon.color))
+            (file_icon.icon.to_string(), Self::devicon_color_to_ratatui(file_icon.color))
         };
 
         Self {
@@ -428,7 +428,7 @@ impl Component for FileTree {
             .iter()
             .filter_map(|&idx| self.nodes.get(idx))
             .map(|node| {
-                let mut spans: Vec<Span> = Vec::new();
+                let mut spans: Vec<Span> = Vec::with_capacity(node.depth + 4);
 
                 for (i, &parent_last) in node.parent_is_last.iter().enumerate() {
                     if i < node.depth {

@@ -102,7 +102,7 @@ impl HelpBar {
             ]
         };
 
-        let mut spans: Vec<Span> = Vec::new();
+        let mut spans: Vec<Span> = Vec::with_capacity(items.len() * 3);
 
         for (i, (key, desc)) in items.iter().enumerate() {
             if i > 0 {

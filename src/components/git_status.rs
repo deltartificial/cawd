@@ -85,7 +85,7 @@ impl GitFile {
 
         let file_icon = FileIcon::from(&name);
         let icon = file_icon.icon.to_string();
-        let icon_color = Self::devicon_color_to_ratatui(&file_icon.color);
+        let icon_color = Self::devicon_color_to_ratatui(file_icon.color);
 
         Self {
             path,
@@ -211,7 +211,7 @@ impl GitStatus {
     /// Parses a git status code into a GitFileStatus.
     fn parse_status(code: &str) -> GitFileStatus {
         let chars: Vec<char> = code.chars().collect();
-        let (index, worktree) = (chars.get(0).unwrap_or(&' '), chars.get(1).unwrap_or(&' '));
+        let (index, worktree) = (chars.first().unwrap_or(&' '), chars.get(1).unwrap_or(&' '));
 
         if *index == 'U' || *worktree == 'U' || (*index == 'A' && *worktree == 'A') || (*index == 'D' && *worktree == 'D') {
             return GitFileStatus::Conflicted;
@@ -423,7 +423,7 @@ impl Component for GitStatus {
             .iter()
             .filter_map(|&idx| self.files.get(idx))
             .map(|file| {
-                let mut spans: Vec<Span> = Vec::new();
+                let mut spans: Vec<Span> = Vec::with_capacity(3);
 
                 spans.push(Span::styled(
                     format!(" {} ", file.status.icon()),

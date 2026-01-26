@@ -8,7 +8,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use syntect::highlighting::FontStyle;
 
@@ -172,7 +172,7 @@ impl CodeViewer {
     }
 
     /// Applies syntax highlighting to the loaded content.
-    fn highlight_content(&mut self, path: &PathBuf) {
+    fn highlight_content(&mut self, path: &Path) {
         let extension = path
             .extension()
             .and_then(|e| e.to_str())
@@ -391,7 +391,7 @@ impl CodeViewer {
             "   ╚═════╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═════╝ ",
         ];
 
-        let mut logo: Vec<Line<'static>> = Vec::new();
+        let mut logo: Vec<Line<'static>> = Vec::with_capacity(30);
         logo.push(Line::from(""));
         logo.push(Line::from(""));
 

@@ -3,6 +3,8 @@
 //! A terminal-based file explorer with syntax highlighting designed for code reading.
 //! Use alongside AI coding assistants to visually verify generated code in real-time.
 
+#![warn(clippy::all)]
+
 mod action;
 mod app;
 mod components;

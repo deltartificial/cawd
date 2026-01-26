@@ -56,7 +56,7 @@ impl SearchResult {
             ("\u{f07b}".to_string(), Color::Rgb(0xff, 0x7a, 0x5c))
         } else {
             let file_icon = FileIcon::from(&name);
-            (file_icon.icon.to_string(), Self::devicon_color_to_ratatui(&file_icon.color))
+            (file_icon.icon.to_string(), Self::devicon_color_to_ratatui(file_icon.color))
         };
 
         let relative_path = path
