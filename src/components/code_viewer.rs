@@ -168,9 +168,11 @@ impl CodeViewer {
         let red_bg = Color::Rgb(0x3d, 0x1a, 0x1a);
         let red_fg = Color::Rgb(0xff, 0x80, 0x80);
 
-        let filtered: Vec<&String> = self
-            .content
-            .iter()
+        // Take ownership to avoid clone allocations
+        let content = std::mem::take(&mut self.content);
+
+        let filtered: Vec<String> = content
+            .into_iter()
             .filter(|line| {
                 !line.starts_with("diff ")
                     && !line.starts_with("index ")
@@ -208,7 +210,7 @@ impl CodeViewer {
             })
             .collect();
 
-        self.content = filtered.iter().map(|s| s.to_string()).collect();
+        self.content = filtered;
     }
 
     /// Applies syntax highlighting to the loaded content.
