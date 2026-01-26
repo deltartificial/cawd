@@ -121,6 +121,12 @@ impl App {
             Style::default().fg(Color::DarkGray)
         };
 
+        let git_style = if self.active_panel == Panel::GitStatus {
+            Style::default().fg(dark_text).bg(orange).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
         let code_style = if self.active_panel == Panel::CodeViewer {
             Style::default().fg(dark_text).bg(orange).add_modifier(Modifier::BOLD)
         } else {
@@ -131,6 +137,8 @@ impl App {
 
         let tabs_line = Line::from(vec![
             Span::styled(" \u{f07b} Explorer ", explorer_style),
+            Span::raw(" "),
+            Span::styled(" \u{f126} Changes ", git_style),
             Span::raw(" "),
             Span::styled(format!(" \u{f15b} {} ", file_name), code_style),
             Span::raw("  "),
