@@ -1,0 +1,13 @@
+[package]
+name = "cawd"
+version = "0.1.0"
+edition = "2021"
+description = "A terminal code viewer with syntax highlighting"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+devicons = "0.6"
+syntect = "5.2"
+clap = { version = "4", features = ["derive"] }
+color-eyre = "0.6"
