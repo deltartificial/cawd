@@ -11,7 +11,7 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 use ratatui::Frame;
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Represents a single node in the file tree.
 ///
@@ -155,7 +155,7 @@ impl FileTree {
     /// Recursively builds tree nodes for a directory.
     fn build_tree_recursive(
         &mut self,
-        dir: &PathBuf,
+        dir: &Path,
         depth: usize,
         parent_is_last: Vec<bool>,
     ) -> color_eyre::Result<()> {

@@ -204,9 +204,8 @@ impl CodeViewer {
 
         let mut highlighter = syntect::easy::HighlightLines::new(syntax, theme);
 
-        let content_clone: Vec<String> = self.content.clone();
-
-        self.highlighted_lines = content_clone
+        self.highlighted_lines = self
+            .content
             .iter()
             .enumerate()
             .map(|(idx, line)| {

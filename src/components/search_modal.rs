@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragra
 use ratatui::Frame;
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The type of search to perform.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,13 +129,13 @@ impl SearchModal {
     }
 
     /// Indexes all files in the directory tree.
-    fn index_files(&mut self, root: &PathBuf) {
+    fn index_files(&mut self, root: &Path) {
         self.all_files.clear();
         self.index_recursive(root, &mut HashSet::new());
     }
 
     /// Recursively indexes files, avoiding cycles and ignored directories.
-    fn index_recursive(&mut self, dir: &PathBuf, visited: &mut HashSet<PathBuf>) {
+    fn index_recursive(&mut self, dir: &Path, visited: &mut HashSet<PathBuf>) {
         if let Ok(canonical) = dir.canonicalize() {
             if visited.contains(&canonical) {
                 return;
