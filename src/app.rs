@@ -1,3 +1,5 @@
+//! Main application state and event loop.
+
 use crate::action::Action;
 use crate::components::code_viewer::CodeViewer;
 use crate::components::file_tree::FileTree;
@@ -13,13 +15,21 @@ use ratatui::text::{Line, Span};
 use std::path::PathBuf;
 use std::time::Instant;
 
+/// The currently active panel in the UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Panel {
+    /// File tree explorer panel.
     FileTree,
+    /// Git status panel showing changed files.
     GitStatus,
+    /// Code viewer panel with syntax highlighting.
     CodeViewer,
 }
 
+/// Main application state container.
+///
+/// Manages all UI components, handles event routing, and maintains
+/// the overall application state including which panel is focused.
 pub struct App {
     file_tree: FileTree,
     git_status: GitStatus,
@@ -34,6 +44,15 @@ pub struct App {
 }
 
 impl App {
+    /// Creates a new application instance.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - The root directory or file path to open.
+    ///
+    /// # Returns
+    ///
+    /// Returns a configured `App` instance, or an error if initialization fails.
     pub fn new(path: PathBuf) -> color_eyre::Result<Self> {
         let root = if path.is_file() {
             path.parent().unwrap_or(&path).to_path_buf()
@@ -54,6 +73,17 @@ impl App {
         })
     }
 
+    /// Runs the main application loop.
+    ///
+    /// Continuously renders the UI and handles events until the user quits.
+    ///
+    /// # Parameters
+    ///
+    /// * `terminal` - Mutable reference to the terminal instance.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on normal exit, or an error if rendering/events fail.
     pub fn run(&mut self, terminal: &mut Tui) -> color_eyre::Result<()> {
         while !self.should_quit {
             terminal.draw(|frame| self.render(frame))?;
@@ -62,13 +92,21 @@ impl App {
         Ok(())
     }
 
+    /// Renders all UI components to the terminal frame.
+    ///
+    /// Layout structure:
+    /// - Top: Tab bar (1 line)
+    /// - Middle: Content area split into left (30%) and right (70%)
+    ///   - Left: File tree (75%) and Git status (25%)
+    ///   - Right: Code viewer
+    /// - Bottom: Help bar (1 line)
     fn render(&mut self, frame: &mut ratatui::Frame) {
         let main_layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1), // Tabs
-                Constraint::Min(1),    // Content
-                Constraint::Length(1), // Help bar
+                Constraint::Length(1),
+                Constraint::Min(1),
+                Constraint::Length(1),
             ])
             .split(frame.area());
 
@@ -76,17 +114,14 @@ impl App {
         let content_area = main_layout[1];
         let help_area = main_layout[2];
 
-        // Render tabs
         self.render_tabs(frame, tabs_area);
 
-        // Content layout: left panel (30%) and code viewer (70%)
         let content_layout = Layout::horizontal([
             Constraint::Percentage(30),
             Constraint::Percentage(70),
         ])
         .split(content_area);
 
-        // Split left panel: file tree (75%) and git status (25%)
         let left_layout = Layout::vertical([
             Constraint::Percentage(75),
             Constraint::Percentage(25),
@@ -100,7 +135,6 @@ impl App {
         self.code_viewer
             .render(frame, content_layout[1], self.active_panel == Panel::CodeViewer);
 
-        // Update help bar context
         let search_mode = self.file_tree.is_search_mode()
             || self.git_status.is_search_mode()
             || self.code_viewer.is_search_mode();
@@ -109,13 +143,14 @@ impl App {
         self.help_bar.set_context(search_mode, in_code_viewer, in_git_status);
         self.help_bar.render(frame, help_area);
 
-        // Render search modal on top if active
         self.search_modal.render(frame);
     }
 
+    /// Renders the tab bar showing panel names.
+    ///
+    /// Active panel is highlighted with orange background.
     fn render_tabs(&self, frame: &mut ratatui::Frame, area: Rect) {
         let orange = Color::Rgb(0xff, 0x7a, 0x5c);
-        let _dark_orange = Color::Rgb(0xe6, 0x5a, 0x3d);
         let dark_text = Color::Rgb(0x1a, 0x12, 0x0f);
 
         let explorer_style = if self.active_panel == Panel::FileTree {
@@ -154,10 +189,16 @@ impl App {
         frame.render_widget(tabs, area);
     }
 
+    /// Handles all input events and updates application state.
+    ///
+    /// Event priority:
+    /// 1. Search modal (when active)
+    /// 2. Component search modes
+    /// 3. Global shortcuts (Ctrl+P, Tab, q)
+    /// 4. Active panel key handling
     fn handle_events(&mut self) -> color_eyre::Result<()> {
-        // Short poll for smooth animation when on welcome screen
         let timeout = if !self.code_viewer.has_file() {
-            std::time::Duration::from_millis(50) // 20 fps for animation
+            std::time::Duration::from_millis(50)
         } else {
             std::time::Duration::from_millis(100)
         };
@@ -168,7 +209,6 @@ impl App {
                     return Ok(());
                 }
 
-                // Search modal takes priority
                 if self.search_modal.active {
                     if let Some(path) = self.search_modal.handle_key(key) {
                         if path.is_file() {
@@ -181,29 +221,24 @@ impl App {
                     return Ok(());
                 }
 
-                // In file tree search mode
                 if self.file_tree.is_search_mode() {
                     let action = self.file_tree.handle_key_event(key);
                     self.handle_action(action)?;
                     return Ok(());
                 }
 
-                // In git status search mode
                 if self.git_status.is_search_mode() {
                     let action = self.git_status.handle_key_event(key);
                     self.handle_action(action)?;
                     return Ok(());
                 }
 
-                // In code viewer search mode
                 if self.code_viewer.is_search_mode() {
                     let action = self.code_viewer.handle_key_event(key);
                     self.handle_action(action)?;
                     return Ok(());
                 }
 
-                // Global shortcuts
-                // Ctrl+P to open search modal
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('p') {
                     self.search_modal.open();
                     return Ok(());
@@ -226,7 +261,6 @@ impl App {
                     return Ok(());
                 }
 
-                // Shift+Tab to go backwards
                 if key.code == KeyCode::BackTab {
                     self.active_panel = match self.active_panel {
                         Panel::FileTree => Panel::CodeViewer,
@@ -236,7 +270,6 @@ impl App {
                     return Ok(());
                 }
 
-                // Delegate to active panel
                 let action = match self.active_panel {
                     Panel::FileTree => self.file_tree.handle_key_event(key),
                     Panel::GitStatus => self.git_status.handle_key_event(key),
@@ -247,7 +280,6 @@ impl App {
             }
         }
 
-        // Auto-refresh git status every 2 seconds
         if self.last_git_refresh.elapsed().as_secs() >= 2 {
             self.git_status.refresh();
             self.last_git_refresh = Instant::now();
@@ -256,6 +288,11 @@ impl App {
         Ok(())
     }
 
+    /// Processes an action returned by a component.
+    ///
+    /// # Parameters
+    ///
+    /// * `action` - The action to process.
     fn handle_action(&mut self, action: Action) -> color_eyre::Result<()> {
         match action {
             Action::Quit => self.should_quit = true,
@@ -264,7 +301,6 @@ impl App {
                     eprintln!("Could not load file: {}", e);
                 }
                 self.active_panel = Panel::CodeViewer;
-                // Refresh git status in case file changes affect it
                 self.git_status.refresh();
             }
             _ => {}

@@ -1,9 +1,15 @@
+//! Legacy search input component (currently unused).
+
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
+/// A simple search input field component.
+///
+/// Note: This component is currently unused in favor of inline search
+/// within other components, but is kept for potential future use.
 #[allow(dead_code)]
 pub struct SearchInput {
     query: String,
@@ -12,6 +18,7 @@ pub struct SearchInput {
 
 #[allow(dead_code)]
 impl SearchInput {
+    /// Creates a new search input.
     pub fn new() -> Self {
         Self {
             query: String::new(),
@@ -19,6 +26,9 @@ impl SearchInput {
         }
     }
 
+    /// Sets whether the search input is active.
+    ///
+    /// Clears the query when deactivated.
     pub fn set_active(&mut self, active: bool) {
         self.active = active;
         if !active {
@@ -26,26 +36,37 @@ impl SearchInput {
         }
     }
 
+    /// Returns whether the search input is active.
     pub fn is_active(&self) -> bool {
         self.active
     }
 
+    /// Appends a character to the query.
     pub fn push(&mut self, c: char) {
         self.query.push(c);
     }
 
+    /// Removes the last character from the query.
     pub fn pop(&mut self) {
         self.query.pop();
     }
 
+    /// Returns the current search query.
     pub fn query(&self) -> &str {
         &self.query
     }
 
+    /// Clears the search query.
     pub fn clear(&mut self) {
         self.query.clear();
     }
 
+    /// Renders the search input to the terminal frame.
+    ///
+    /// # Parameters
+    ///
+    /// * `frame` - The terminal frame to render to.
+    /// * `area` - The rectangular area allocated for this component.
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         if !self.active {
             return;

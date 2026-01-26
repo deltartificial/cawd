@@ -1,3 +1,5 @@
+//! Git status component showing changed files in the repository.
+
 use crate::action::Action;
 use crate::components::Component;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -10,17 +12,25 @@ use ratatui::Frame;
 use std::path::PathBuf;
 use std::process::Command;
 
+/// Represents the git status of a file.
 #[derive(Debug, Clone, PartialEq)]
 pub enum GitFileStatus {
+    /// File has been modified.
     Modified,
+    /// File has been added to staging.
     Added,
+    /// File has been deleted.
     Deleted,
+    /// File has been renamed.
     Renamed,
+    /// File is not tracked by git.
     Untracked,
+    /// File has merge conflicts.
     Conflicted,
 }
 
 impl GitFileStatus {
+    /// Returns the single-character status indicator.
     fn icon(&self) -> &str {
         match self {
             GitFileStatus::Modified => "M",
@@ -32,28 +42,41 @@ impl GitFileStatus {
         }
     }
 
+    /// Returns the color associated with this status.
     fn color(&self) -> Color {
         match self {
-            GitFileStatus::Modified => Color::Rgb(0xff, 0xc1, 0x07), // Yellow
-            GitFileStatus::Added => Color::Rgb(0x28, 0xa7, 0x45),    // Green
-            GitFileStatus::Deleted => Color::Rgb(0xdc, 0x35, 0x45),  // Red
-            GitFileStatus::Renamed => Color::Rgb(0x6f, 0x42, 0xc1),  // Purple
-            GitFileStatus::Untracked => Color::Rgb(0x6c, 0x75, 0x7d), // Gray
-            GitFileStatus::Conflicted => Color::Rgb(0xff, 0x7a, 0x5c), // Orange
+            GitFileStatus::Modified => Color::Rgb(0xff, 0xc1, 0x07),
+            GitFileStatus::Added => Color::Rgb(0x28, 0xa7, 0x45),
+            GitFileStatus::Deleted => Color::Rgb(0xdc, 0x35, 0x45),
+            GitFileStatus::Renamed => Color::Rgb(0x6f, 0x42, 0xc1),
+            GitFileStatus::Untracked => Color::Rgb(0x6c, 0x75, 0x7d),
+            GitFileStatus::Conflicted => Color::Rgb(0xff, 0x7a, 0x5c),
         }
     }
 }
 
+/// Represents a file with git changes.
 #[derive(Debug, Clone)]
 pub struct GitFile {
+    /// Absolute path to the file.
     pub path: PathBuf,
+    /// Display name (filename only).
     pub name: String,
+    /// The git status of the file.
     pub status: GitFileStatus,
+    /// File type icon.
     pub icon: String,
+    /// Color for the file icon.
     pub icon_color: Color,
 }
 
 impl GitFile {
+    /// Creates a new GitFile from a path and status.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - The absolute path to the file.
+    /// * `status` - The git status of the file.
     pub fn new(path: PathBuf, status: GitFileStatus) -> Self {
         let name = path
             .file_name()
@@ -73,6 +96,7 @@ impl GitFile {
         }
     }
 
+    /// Converts a hex color string to a ratatui Color.
     fn devicon_color_to_ratatui(hex: &str) -> Color {
         if hex.starts_with('#') && hex.len() == 7 {
             if let (Ok(r), Ok(g), Ok(b)) = (
@@ -87,6 +111,10 @@ impl GitFile {
     }
 }
 
+/// Git status panel component.
+///
+/// Displays a list of files with uncommitted changes, supporting
+/// navigation, filtering, and file selection.
 pub struct GitStatus {
     root: PathBuf,
     files: Vec<GitFile>,
@@ -97,6 +125,11 @@ pub struct GitStatus {
 }
 
 impl GitStatus {
+    /// Creates a new GitStatus component.
+    ///
+    /// # Parameters
+    ///
+    /// * `root` - The root directory of the git repository.
     pub fn new(root: PathBuf) -> Self {
         let mut status = Self {
             root,
@@ -110,10 +143,12 @@ impl GitStatus {
         status
     }
 
+    /// Refreshes the list of changed files from git.
+    ///
+    /// Runs `git status --porcelain` and parses the output.
     pub fn refresh(&mut self) {
         self.files.clear();
 
-        // Run git status --porcelain
         let output = Command::new("git")
             .args(["status", "--porcelain"])
             .current_dir(&self.root)
@@ -130,7 +165,6 @@ impl GitStatus {
                     let status_code = &line[0..2];
                     let file_path = line[3..].trim();
 
-                    // Handle renamed files (old -> new)
                     let file_path = if file_path.contains(" -> ") {
                         file_path.split(" -> ").last().unwrap_or(file_path)
                     } else {
@@ -144,7 +178,6 @@ impl GitStatus {
             }
         }
 
-        // Sort by status priority, then alphabetically
         self.files.sort_by(|a, b| {
             let status_order = |s: &GitFileStatus| match s {
                 GitFileStatus::Conflicted => 0,
@@ -166,16 +199,15 @@ impl GitStatus {
         }
     }
 
+    /// Parses a git status code into a GitFileStatus.
     fn parse_status(code: &str) -> GitFileStatus {
         let chars: Vec<char> = code.chars().collect();
         let (index, worktree) = (chars.get(0).unwrap_or(&' '), chars.get(1).unwrap_or(&' '));
 
-        // Check for conflicts first
         if *index == 'U' || *worktree == 'U' || (*index == 'A' && *worktree == 'A') || (*index == 'D' && *worktree == 'D') {
             return GitFileStatus::Conflicted;
         }
 
-        // Check staged changes (index)
         match index {
             'M' => return GitFileStatus::Modified,
             'A' => return GitFileStatus::Added,
@@ -184,7 +216,6 @@ impl GitStatus {
             _ => {}
         }
 
-        // Check unstaged changes (worktree)
         match worktree {
             'M' => return GitFileStatus::Modified,
             'D' => return GitFileStatus::Deleted,
@@ -195,6 +226,7 @@ impl GitStatus {
         GitFileStatus::Modified
     }
 
+    /// Updates the filtered indices based on the current search query.
     fn update_filtered_indices(&mut self) {
         if self.search_query.is_empty() {
             self.filtered_indices = (0..self.files.len()).collect();
@@ -210,16 +242,19 @@ impl GitStatus {
         }
     }
 
+    /// Returns the number of visible items after filtering.
     fn visible_count(&self) -> usize {
         self.filtered_indices.len()
     }
 
+    /// Returns the currently selected file, if any.
     fn selected_file(&self) -> Option<&GitFile> {
         let selected = self.list_state.selected()?;
         let idx = *self.filtered_indices.get(selected)?;
         self.files.get(idx)
     }
 
+    /// Moves selection up in the list.
     fn move_up(&mut self) {
         if self.visible_count() == 0 {
             return;
@@ -233,6 +268,7 @@ impl GitStatus {
         self.list_state.select(Some(new_idx));
     }
 
+    /// Moves selection down in the list.
     fn move_down(&mut self) {
         if self.visible_count() == 0 {
             return;
@@ -246,6 +282,7 @@ impl GitStatus {
         self.list_state.select(Some(new_idx));
     }
 
+    /// Selects the current file for viewing.
     fn select_file(&self) -> Action {
         if let Some(file) = self.selected_file() {
             if file.path.exists() {
@@ -255,12 +292,14 @@ impl GitStatus {
         Action::None
     }
 
+    /// Enters search/filter mode.
     pub fn enter_search_mode(&mut self) {
         self.search_mode = true;
         self.search_query.clear();
         self.update_filtered_indices();
     }
 
+    /// Exits search/filter mode and clears the query.
     pub fn exit_search_mode(&mut self) {
         self.search_mode = false;
         self.search_query.clear();
@@ -270,18 +309,21 @@ impl GitStatus {
         }
     }
 
+    /// Appends a character to the search query.
     pub fn search_input(&mut self, c: char) {
         self.search_query.push(c);
         self.update_filtered_indices();
         self.list_state.select(Some(0));
     }
 
+    /// Removes the last character from the search query.
     pub fn search_backspace(&mut self) {
         self.search_query.pop();
         self.update_filtered_indices();
         self.list_state.select(Some(0));
     }
 
+    /// Returns whether the component is in search mode.
     pub fn is_search_mode(&self) -> bool {
         self.search_mode
     }
@@ -362,12 +404,7 @@ impl Component for GitStatus {
         }
 
         if self.files.is_empty() {
-            let empty_text = if focused {
-                " No changes "
-            } else {
-                " No changes "
-            };
-            let paragraph = ratatui::widgets::Paragraph::new(empty_text)
+            let paragraph = ratatui::widgets::Paragraph::new(" No changes ")
                 .block(block)
                 .style(Style::default().fg(Color::DarkGray));
             frame.render_widget(paragraph, area);
@@ -381,19 +418,16 @@ impl Component for GitStatus {
                 let file = &self.files[idx];
                 let mut spans: Vec<Span> = Vec::new();
 
-                // Status indicator
                 spans.push(Span::styled(
                     format!(" {} ", file.status.icon()),
                     Style::default().fg(file.status.color()).add_modifier(Modifier::BOLD),
                 ));
 
-                // File icon
                 spans.push(Span::styled(
                     format!("{} ", file.icon),
                     Style::default().fg(file.icon_color),
                 ));
 
-                // File name
                 spans.push(Span::styled(
                     &file.name,
                     Style::default().fg(file.icon_color),

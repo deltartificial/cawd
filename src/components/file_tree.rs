@@ -1,3 +1,5 @@
+//! File tree explorer component for navigating directory structures.
+
 use crate::action::Action;
 use crate::components::Component;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -11,19 +13,43 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
+/// Represents a single node in the file tree.
+///
+/// Contains all information needed to display and interact with
+/// a file or directory entry in the tree view.
 #[derive(Debug, Clone)]
 pub struct TreeNode {
+    /// Absolute path to the file or directory.
     pub path: PathBuf,
+    /// Display name (filename without path).
     pub name: String,
+    /// Whether this node is a directory.
     pub is_dir: bool,
+    /// Icon character from devicons.
     pub icon: String,
+    /// Color for the icon and filename.
     pub color: Color,
+    /// Nesting depth in the tree (0 = root level).
     pub depth: usize,
+    /// Whether this is the last sibling at its level.
     pub is_last: bool,
+    /// Tracks which ancestors are last children (for tree line drawing).
     pub parent_is_last: Vec<bool>,
 }
 
 impl TreeNode {
+    /// Creates a new tree node from a path.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - The absolute path to the file or directory.
+    /// * `depth` - The nesting depth in the tree.
+    /// * `is_last` - Whether this is the last sibling at its level.
+    /// * `parent_is_last` - Vector tracking which ancestors are last children.
+    ///
+    /// # Returns
+    ///
+    /// A new `TreeNode` with icon and color determined from the filename.
     pub fn new(path: PathBuf, depth: usize, is_last: bool, parent_is_last: Vec<bool>) -> Self {
         let name = path
             .file_name()
@@ -51,6 +77,7 @@ impl TreeNode {
         }
     }
 
+    /// Converts a hex color string to a ratatui Color.
     fn devicon_color_to_ratatui(hex: &str) -> Color {
         if hex.starts_with('#') && hex.len() == 7 {
             if let (Ok(r), Ok(g), Ok(b)) = (
@@ -65,6 +92,10 @@ impl TreeNode {
     }
 }
 
+/// File tree component for directory navigation.
+///
+/// Displays a hierarchical view of files and directories with
+/// expand/collapse functionality, filtering, and file selection.
 pub struct FileTree {
     root: PathBuf,
     nodes: Vec<TreeNode>,
@@ -77,6 +108,15 @@ pub struct FileTree {
 }
 
 impl FileTree {
+    /// Creates a new file tree rooted at the given path.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - The root directory or file path.
+    ///
+    /// # Returns
+    ///
+    /// A new `FileTree` instance with the root directory expanded.
     pub fn new(path: PathBuf) -> color_eyre::Result<Self> {
         let root = if path.is_file() {
             path.parent().unwrap_or(&path).to_path_buf()
@@ -104,6 +144,7 @@ impl FileTree {
         Ok(tree)
     }
 
+    /// Rebuilds the entire tree structure from the filesystem.
     fn rebuild_tree(&mut self) -> color_eyre::Result<()> {
         self.nodes.clear();
         self.build_tree_recursive(&self.root.clone(), 0, vec![])?;
@@ -111,6 +152,7 @@ impl FileTree {
         Ok(())
     }
 
+    /// Recursively builds tree nodes for a directory.
     fn build_tree_recursive(
         &mut self,
         dir: &PathBuf,
@@ -131,7 +173,6 @@ impl FileTree {
             })
             .collect();
 
-        // Sort: directories first, then alphabetically
         entries.sort_by(|a, b| {
             let a_is_dir = a.is_dir();
             let b_is_dir = b.is_dir();
@@ -161,6 +202,7 @@ impl FileTree {
         Ok(())
     }
 
+    /// Updates the filtered indices based on the current search query.
     fn update_filtered_indices(&mut self) {
         if self.search_query.is_empty() {
             self.filtered_indices = (0..self.nodes.len()).collect();
@@ -176,16 +218,19 @@ impl FileTree {
         }
     }
 
+    /// Returns the number of visible items after filtering.
     fn visible_count(&self) -> usize {
         self.filtered_indices.len()
     }
 
+    /// Returns the currently selected node, if any.
     fn selected_node(&self) -> Option<&TreeNode> {
         let selected = self.list_state.selected()?;
         let idx = *self.filtered_indices.get(selected)?;
         self.nodes.get(idx)
     }
 
+    /// Moves selection up in the list.
     fn move_up(&mut self) {
         if self.visible_count() == 0 {
             return;
@@ -199,6 +244,7 @@ impl FileTree {
         self.list_state.select(Some(new_idx));
     }
 
+    /// Moves selection down in the list.
     fn move_down(&mut self) {
         if self.visible_count() == 0 {
             return;
@@ -212,6 +258,7 @@ impl FileTree {
         self.list_state.select(Some(new_idx));
     }
 
+    /// Toggles expansion of a directory or selects a file.
     fn toggle_expand(&mut self) -> Action {
         if let Some(node) = self.selected_node().cloned() {
             if node.is_dir {
@@ -230,16 +277,15 @@ impl FileTree {
         }
     }
 
+    /// Collapses the current directory or navigates to parent.
     fn collapse_current(&mut self) {
         if let Some(node) = self.selected_node().cloned() {
             if node.is_dir && self.expanded.contains(&node.path) {
                 self.expanded.remove(&node.path);
                 let _ = self.rebuild_tree();
             } else if node.depth > 0 {
-                // Go to parent directory
                 if let Some(parent) = node.path.parent() {
                     let parent_path = parent.to_path_buf();
-                    // Find parent in nodes and select it
                     if let Some(pos) = self.nodes.iter().position(|n| n.path == parent_path) {
                         if let Some(filtered_pos) = self.filtered_indices.iter().position(|&i| i == pos) {
                             self.list_state.select(Some(filtered_pos));
@@ -250,18 +296,21 @@ impl FileTree {
         }
     }
 
+    /// Toggles visibility of hidden files (dotfiles).
     fn toggle_hidden(&mut self) {
         self.show_hidden = !self.show_hidden;
         let _ = self.rebuild_tree();
         self.list_state.select(Some(0));
     }
 
+    /// Enters search/filter mode.
     pub fn enter_search_mode(&mut self) {
         self.search_mode = true;
         self.search_query.clear();
         self.update_filtered_indices();
     }
 
+    /// Exits search/filter mode and clears the query.
     pub fn exit_search_mode(&mut self) {
         self.search_mode = false;
         self.search_query.clear();
@@ -269,18 +318,21 @@ impl FileTree {
         self.list_state.select(Some(0));
     }
 
+    /// Appends a character to the search query.
     pub fn search_input(&mut self, c: char) {
         self.search_query.push(c);
         self.update_filtered_indices();
         self.list_state.select(Some(0));
     }
 
+    /// Removes the last character from the search query.
     pub fn search_backspace(&mut self) {
         self.search_query.pop();
         self.update_filtered_indices();
         self.list_state.select(Some(0));
     }
 
+    /// Returns whether the component is in search mode.
     pub fn is_search_mode(&self) -> bool {
         self.search_mode
     }
@@ -378,7 +430,6 @@ impl Component for FileTree {
                 let node = &self.nodes[idx];
                 let mut spans: Vec<Span> = Vec::new();
 
-                // Build tree prefix
                 for (i, &parent_last) in node.parent_is_last.iter().enumerate() {
                     if i < node.depth {
                         if parent_last {
@@ -389,7 +440,6 @@ impl Component for FileTree {
                     }
                 }
 
-                // Add branch character
                 if node.depth > 0 {
                     if node.is_last {
                         spans.push(Span::styled("└── ", tree_style));
@@ -398,23 +448,20 @@ impl Component for FileTree {
                     }
                 }
 
-                // Expand/collapse indicator for directories
                 if node.is_dir {
                     let indicator = if self.expanded.contains(&node.path) {
-                        "\u{f0d7} " // Down arrow (expanded)
+                        "\u{f0d7} "
                     } else {
-                        "\u{f0da} " // Right arrow (collapsed)
+                        "\u{f0da} "
                     };
                     spans.push(Span::styled(indicator, Style::default().fg(Color::Rgb(0xff, 0x7a, 0x5c))));
                 }
 
-                // Icon
                 spans.push(Span::styled(
                     format!("{} ", node.icon),
                     Style::default().fg(node.color),
                 ));
 
-                // Name - same color as icon
                 let name_style = if node.is_dir {
                     Style::default().fg(Color::Rgb(0xff, 0x7a, 0x5c)).add_modifier(Modifier::BOLD)
                 } else {

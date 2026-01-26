@@ -1,9 +1,15 @@
+//! Context-sensitive help bar displaying available keybindings.
+
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
+/// Help bar component showing keyboard shortcuts.
+///
+/// Displays different keybindings based on the current context
+/// (file tree, code viewer, git status, or search mode).
 pub struct HelpBar {
     search_mode: bool,
     in_code_viewer: bool,
@@ -11,6 +17,7 @@ pub struct HelpBar {
 }
 
 impl HelpBar {
+    /// Creates a new help bar instance.
     pub fn new() -> Self {
         Self {
             search_mode: false,
@@ -19,17 +26,31 @@ impl HelpBar {
         }
     }
 
+    /// Updates the context for determining which keybindings to show.
+    ///
+    /// # Parameters
+    ///
+    /// * `search_mode` - Whether any component is in search mode.
+    /// * `in_code_viewer` - Whether the code viewer is focused with a file open.
+    /// * `in_git_status` - Whether the git status panel is focused.
     pub fn set_context(&mut self, search_mode: bool, in_code_viewer: bool, in_git_status: bool) {
         self.search_mode = search_mode;
         self.in_code_viewer = in_code_viewer;
         self.in_git_status = in_git_status;
     }
 
+    /// Sets the search mode flag.
     #[allow(dead_code)]
     pub fn set_search_mode(&mut self, search_mode: bool) {
         self.search_mode = search_mode;
     }
 
+    /// Renders the help bar to the terminal frame.
+    ///
+    /// # Parameters
+    ///
+    /// * `frame` - The terminal frame to render to.
+    /// * `area` - The rectangular area allocated for this component.
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         let orange_bg = Color::Rgb(0xe6, 0x5a, 0x3d);
         let dark_text = Color::Rgb(0x1a, 0x12, 0x0f);
