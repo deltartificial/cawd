@@ -10,13 +10,11 @@ use ratatui::Frame;
 ///
 /// Note: This component is currently unused in favor of inline search
 /// within other components, but is kept for potential future use.
-#[allow(dead_code)]
 pub struct SearchInput {
     query: String,
     active: bool,
 }
 
-#[allow(dead_code)]
 impl SearchInput {
     /// Creates a new search input.
     pub fn new() -> Self {

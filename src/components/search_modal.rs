@@ -61,8 +61,7 @@ impl SearchResult {
 
         let relative_path = path
             .strip_prefix(root)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| path.to_string_lossy().to_string());
+            .map_or_else(|_| path.to_string_lossy().to_string(), |p| p.to_string_lossy().to_string());
 
         Self {
             path,
@@ -290,7 +289,7 @@ impl SearchModal {
                         .map(|n| n.to_string_lossy().to_lowercase())
                         .unwrap_or_default();
 
-                    let score = self.fuzzy_score(&name, &query_chars);
+                    let score = Self::fuzzy_score(&name, &query_chars);
                     if score > 0 {
                         Some((SearchResult::new(path.clone(), &self.root), score))
                     } else {
@@ -308,17 +307,17 @@ impl SearchModal {
                 .collect();
         }
 
-        if !self.results.is_empty() {
-            self.list_state.select(Some(0));
-        } else {
+        if self.results.is_empty() {
             self.list_state.select(None);
+        } else {
+            self.list_state.select(Some(0));
         }
     }
 
     /// Computes a fuzzy match score for a filename.
     ///
     /// Higher scores indicate better matches. Returns 0 if no match.
-    fn fuzzy_score(&self, text: &str, query: &[char]) -> i32 {
+    fn fuzzy_score(text: &str, query: &[char]) -> i32 {
         if query.is_empty() {
             return 1;
         }
@@ -338,7 +337,7 @@ impl SearchModal {
                     }
                 }
 
-                if i == 0 || text_chars.get(i - 1).map(|&c| c == '_' || c == '-' || c == '.').unwrap_or(false) {
+                if i == 0 || text_chars.get(i - 1).is_some_and(|&c| c == '_' || c == '-' || c == '.') {
                     score += 10;
                 }
 
@@ -366,8 +365,8 @@ impl SearchModal {
 
         let area = frame.area();
 
-        let modal_width = (area.width as f32 * 0.6).min(80.0) as u16;
-        let modal_height = (area.height as f32 * 0.6).min(30.0) as u16;
+        let modal_width = (f32::from(area.width) * 0.6).min(80.0) as u16;
+        let modal_height = (f32::from(area.height) * 0.6).min(30.0) as u16;
 
         let modal_area = Rect {
             x: (area.width - modal_width) / 2,

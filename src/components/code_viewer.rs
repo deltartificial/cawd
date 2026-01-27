@@ -179,7 +179,7 @@ impl CodeViewer {
                     && !line.starts_with("---")
                     && !line.starts_with("+++")
                     && !line.starts_with("@@")
-                    && !line.starts_with("\\")
+                    && !line.starts_with('\\')
             })
             .collect();
 
@@ -438,15 +438,15 @@ impl CodeViewer {
 
         for (i, line_text) in logo_lines.iter().enumerate() {
             let phase = frame_offset + (i as f64 * 0.6);
-            let wave = (phase.sin() + 1.0) / 2.0;
+            let wave = f64::midpoint(phase.sin(), 1.0);
 
-            let r = (0xaa as f64 + (0xff - 0xaa) as f64 * wave) as u8;
-            let g = (0x44 as f64 + (0x7a - 0x44) as f64 * wave) as u8;
-            let b = (0x22 as f64 + (0x5c - 0x22) as f64 * wave) as u8;
+            let r = (f64::from(0xaau8) + f64::from(0xff - 0xaa) * wave) as u8;
+            let g = (f64::from(0x44u8) + f64::from(0x7a - 0x44) * wave) as u8;
+            let b = (f64::from(0x22u8) + f64::from(0x5c - 0x22) * wave) as u8;
 
             let color = Color::Rgb(r, g, b);
             logo.push(Line::from(Span::styled(
-                line_text.to_string(),
+                (*line_text).to_string(),
                 Style::default().fg(color),
             )));
         }
@@ -534,8 +534,8 @@ impl CodeViewer {
         let dark_bg = Color::Rgb(0x1a, 0x1a, 0x2e);
         let dark_text = Color::Rgb(0x1a, 0x12, 0x0f);
 
-        let modal_width = (area.width as f32 * 0.7).min(70.0) as u16;
-        let modal_height = (area.height as f32 * 0.5).min(20.0) as u16;
+        let modal_width = (f32::from(area.width) * 0.7).min(70.0) as u16;
+        let modal_height = (f32::from(area.height) * 0.5).min(20.0) as u16;
 
         let modal_area = Rect {
             x: area.x + (area.width - modal_width) / 2,
@@ -722,14 +722,13 @@ impl Component for CodeViewer {
             .as_ref()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .map(|n| {
+            .map_or_else(|| " Code ".to_string(), |n| {
                 if self.view_mode == ViewMode::Diff {
                     format!(" [DIFF] {} ", n)
                 } else {
                     format!(" {} ", n)
                 }
-            })
-            .unwrap_or_else(|| " Code ".to_string());
+            });
 
         let mut block = Block::default()
             .borders(Borders::ALL)

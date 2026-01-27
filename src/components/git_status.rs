@@ -80,8 +80,7 @@ impl GitFile {
     pub fn new(path: PathBuf, status: GitFileStatus) -> Self {
         let name = path
             .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string_lossy().to_string());
+            .map_or_else(|| path.to_string_lossy().to_string(), |n| n.to_string_lossy().to_string());
 
         let file_icon = FileIcon::from(&name);
         let icon = file_icon.icon.to_string();

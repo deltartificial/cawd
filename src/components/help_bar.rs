@@ -41,7 +41,6 @@ impl HelpBar {
     }
 
     /// Sets the search mode flag.
-    #[allow(dead_code)]
     pub fn set_search_mode(&mut self, search_mode: bool) {
         self.search_mode = search_mode;
     }

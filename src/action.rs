@@ -7,7 +7,6 @@ use std::path::PathBuf;
 /// Actions are returned by components when handling key events and are
 /// processed by the main application to update state or trigger behavior.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum Action {
     /// Exit the application.
     Quit,

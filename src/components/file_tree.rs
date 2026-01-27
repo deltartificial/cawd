@@ -53,8 +53,7 @@ impl TreeNode {
     pub fn new(path: PathBuf, depth: usize, is_last: bool, parent_is_last: Vec<bool>) -> Self {
         let name = path
             .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string_lossy().to_string());
+            .map_or_else(|| path.to_string_lossy().to_string(), |n| n.to_string_lossy().to_string());
 
         let is_dir = path.is_dir();
 
@@ -167,8 +166,7 @@ impl FileTree {
                     true
                 } else {
                     p.file_name()
-                        .map(|n| !n.to_string_lossy().starts_with('.'))
-                        .unwrap_or(true)
+                        .is_none_or(|n| !n.to_string_lossy().starts_with('.'))
                 }
             })
             .collect();
@@ -407,8 +405,7 @@ impl Component for FileTree {
 
         let root_name = self.root
             .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| self.root.to_string_lossy().to_string());
+            .map_or_else(|| self.root.to_string_lossy().to_string(), |n| n.to_string_lossy().to_string());
         let title = format!(" \u{f07b} {} ", root_name);
 
         let mut block = Block::default()

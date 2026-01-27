@@ -38,7 +38,6 @@ pub struct App {
     search_modal: SearchModal,
     active_panel: Panel,
     should_quit: bool,
-    #[allow(dead_code)]
     root: PathBuf,
     last_git_refresh: Instant,
 }
@@ -197,10 +196,10 @@ impl App {
     /// 3. Global shortcuts (Ctrl+P, Tab, q)
     /// 4. Active panel key handling
     fn handle_events(&mut self) -> color_eyre::Result<()> {
-        let timeout = if !self.code_viewer.has_file() {
-            std::time::Duration::from_millis(50)
-        } else {
+        let timeout = if self.code_viewer.has_file() {
             std::time::Duration::from_millis(100)
+        } else {
+            std::time::Duration::from_millis(50)
         };
 
         if event::poll(timeout)? {
