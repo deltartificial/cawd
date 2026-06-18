@@ -408,11 +408,22 @@ impl Review {
         };
 
         let orange = Color::Rgb(0xff, 0x7a, 0x5c);
-        let title = format!(
-            " \u{f075} Review ({}/{}) ",
-            self.visible_indices.len(),
-            self.annotations.len()
-        );
+        let resolved = self
+            .annotations
+            .iter()
+            .filter(|a| a.status == AnnotationStatus::Resolved)
+            .count();
+        let title = if self.show_resolved {
+            format!(" \u{f075} Review ({} · all shown) ", self.annotations.len())
+        } else if resolved > 0 {
+            format!(
+                " \u{f075} Review ({} active · {} done) ",
+                self.visible_indices.len(),
+                resolved
+            )
+        } else {
+            format!(" \u{f075} Review ({}) ", self.visible_indices.len())
+        };
 
         let mut block = Block::default()
             .borders(Borders::ALL)
@@ -425,7 +436,12 @@ impl Review {
                 .title_bottom(Line::from(format!(" {} ", message)).style(Style::default().fg(orange)));
         } else if hidden > 0 {
             block = block.title_bottom(
-                Line::from(format!(" a: show {} resolved ", hidden))
+                Line::from(format!(" press 'a' to show {} done ", hidden))
+                    .style(Style::default().fg(orange)),
+            );
+        } else if self.show_resolved {
+            block = block.title_bottom(
+                Line::from(" press 'a' to hide done ")
                     .style(Style::default().fg(Color::DarkGray)),
             );
         }

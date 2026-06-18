@@ -54,8 +54,14 @@ In the code viewer, drag with the mouse to select one or more lines, then press
 under `.cawd/` at the project root, capturing the file path, line range, the
 selected code excerpt, and your comment — handy for reviewing AI-generated code.
 
-The **Review** tab (cycle with `Tab`) lists every annotation with a status badge
-(○ open · ◐ in progress · ● resolved):
+Once saved, the annotated lines are highlighted directly in the code viewer:
+the line range gets a status-colored background and the comment is shown inline
+on the first line (amber = open, blue = in progress, green = done), so you can
+see at a glance which lines a comment refers to while reading the file.
+
+The **Review** tab (cycle with `Tab`, or press `3`) lists every annotation with
+a status badge (○ open · ◐ in progress · ● resolved). Resolved annotations are
+hidden by default — the title shows how many are *done* and `a` reveals them:
 
 | Key | Action |
 |-----|--------|

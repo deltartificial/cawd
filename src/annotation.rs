@@ -87,6 +87,18 @@ impl Annotation {
         root.join(".cawd")
     }
 
+    /// Returns the 1-based inclusive line range `(start, end)` this annotation
+    /// covers, parsed from the `lines` label (e.g. `42-45` or a single `42`).
+    pub fn line_range(&self) -> (usize, usize) {
+        let end = self
+            .lines
+            .rsplit('-')
+            .next()
+            .and_then(|s| s.trim().parse::<usize>().ok())
+            .unwrap_or(self.start_line);
+        (self.start_line, end.max(self.start_line))
+    }
+
     /// Serializes the annotation back to its markdown representation.
     pub fn to_markdown(&self) -> String {
         format!(

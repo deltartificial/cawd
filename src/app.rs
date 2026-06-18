@@ -191,13 +191,13 @@ impl App {
         let file_name = self.code_viewer.file_name().unwrap_or("Code");
 
         let tabs_line = Line::from(vec![
-            Span::styled(" \u{f07b} Explorer ", explorer_style),
+            Span::styled(" 1 \u{f07b} Explorer ", explorer_style),
             Span::raw(" "),
-            Span::styled(" \u{f126} Changes ", git_style),
+            Span::styled(" 2 \u{f126} Changes ", git_style),
             Span::raw(" "),
-            Span::styled(" \u{f075} Review ", review_style),
+            Span::styled(" 3 \u{f075} Review ", review_style),
             Span::raw(" "),
-            Span::styled(format!(" \u{f15b} {} ", file_name), code_style),
+            Span::styled(format!(" 4 \u{f15b} {} ", file_name), code_style),
             Span::raw("  "),
             Span::styled("Ctrl+P: Search", Style::default().fg(Color::DarkGray)),
         ]);
@@ -312,6 +312,20 @@ impl App {
                     return Ok(());
                 }
 
+                // Direct panel jumps: 1 Explorer, 2 Changes, 3 Review, 4 File.
+                if let KeyCode::Char(digit @ '1'..='4') = key.code {
+                    self.active_panel = match digit {
+                        '1' => Panel::FileTree,
+                        '2' => Panel::GitStatus,
+                        '3' => Panel::Review,
+                        _ => Panel::CodeViewer,
+                    };
+                    if self.active_panel == Panel::Review {
+                        self.review.refresh();
+                    }
+                    return Ok(());
+                }
+
                 let action = match self.active_panel {
                     Panel::FileTree => self.file_tree.handle_key_event(key),
                     Panel::GitStatus => self.git_status.handle_key_event(key),
@@ -334,6 +348,9 @@ impl App {
             self.git_status.refresh();
             self.review.poll_workers();
             self.review.refresh();
+            // Keep the in-file annotation overlays in sync with status changes
+            // made from the Review panel or by workers.
+            self.code_viewer.refresh_annotations();
             self.last_git_refresh = Instant::now();
         }
 

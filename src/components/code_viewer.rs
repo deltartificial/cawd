@@ -57,6 +57,8 @@ pub struct CodeViewer {
     comment_input: String,
     /// Transient status message shown after saving an annotation.
     status_message: Option<String>,
+    /// Annotations belonging to the currently displayed file (Code view only).
+    annotations: Vec<Annotation>,
 }
 
 impl CodeViewer {
@@ -89,7 +91,60 @@ impl CodeViewer {
             comment_mode: false,
             comment_input: String::new(),
             status_message: None,
+            annotations: Vec::new(),
         }
+    }
+
+    /// Reloads the annotations that belong to the file currently displayed.
+    ///
+    /// Only populated in [`ViewMode::Code`]; the diff view shows none. Matching
+    /// is by the project-relative path stored on each annotation.
+    fn reload_annotations(&mut self) {
+        self.annotations.clear();
+        if self.view_mode != ViewMode::Code {
+            return;
+        }
+        let Some(path) = &self.file_path else {
+            return;
+        };
+        let rel = path
+            .strip_prefix(&self.root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .into_owned();
+        self.annotations = Annotation::load_all(&self.root)
+            .into_iter()
+            .filter(|a| a.file == rel)
+            .collect();
+    }
+
+    /// Reloads annotations for the open file so status/comment overlays stay in
+    /// sync with changes made elsewhere (e.g. the Review panel).
+    pub fn refresh_annotations(&mut self) {
+        self.reload_annotations();
+    }
+
+    /// Returns the `(background, foreground)` colors used to render an
+    /// annotated line range and its inline comment, keyed by status.
+    fn annotation_colors(status: AnnotationStatus) -> (Color, Color) {
+        match status {
+            AnnotationStatus::Open => (Color::Rgb(0x3a, 0x30, 0x10), Color::Rgb(0xff, 0xc1, 0x07)),
+            AnnotationStatus::InProgress => {
+                (Color::Rgb(0x10, 0x28, 0x3a), Color::Rgb(0x2a, 0x9d, 0xf4))
+            }
+            AnnotationStatus::Resolved => {
+                (Color::Rgb(0x12, 0x2a, 0x18), Color::Rgb(0x28, 0xa7, 0x45))
+            }
+        }
+    }
+
+    /// Returns the first annotation covering the given 0-based content line.
+    fn annotation_at(&self, idx: usize) -> Option<&Annotation> {
+        let line = idx + 1; // annotation ranges are 1-based
+        self.annotations.iter().find(|a| {
+            let (start, end) = a.line_range();
+            line >= start && line <= end
+        })
     }
 
     /// Loads a file and applies syntax highlighting.
@@ -113,6 +168,7 @@ impl CodeViewer {
         self.status_message = None;
 
         self.highlight_content(&path);
+        self.reload_annotations();
 
         Ok(())
     }
@@ -521,6 +577,7 @@ impl CodeViewer {
         self.comment_mode = false;
         self.comment_input.clear();
         self.clear_selection();
+        self.reload_annotations();
     }
 
     /// Scrolls the view so the given 1-based line is at the top.
@@ -1057,6 +1114,13 @@ impl Component for CodeViewer {
             );
         } else if let Some(msg) = &self.status_message {
             block = block.title_bottom(Line::from(format!(" {} ", msg)).style(Style::default().fg(orange)));
+        } else if !self.annotations.is_empty() {
+            let label = if self.annotations.len() == 1 {
+                " 1 annotation ".to_string()
+            } else {
+                format!(" {} annotations ", self.annotations.len())
+            };
+            block = block.title_bottom(Line::from(label).style(Style::default().fg(orange)));
         }
 
         self.view_area = block.inner(area);
@@ -1079,6 +1143,18 @@ impl Component for CodeViewer {
                     )])
                 } else if selection.is_some_and(|(s, e)| idx >= s && idx <= e) {
                     line.clone().patch_style(selection_style)
+                } else if let Some(annotation) = self.annotation_at(idx) {
+                    let (bg, fg) = Self::annotation_colors(annotation.status);
+                    let mut annotated = line.clone().patch_style(Style::default().bg(bg));
+                    // Show the comment inline on the first line of the range.
+                    if idx + 1 == annotation.line_range().0 {
+                        let comment = annotation.comment.lines().next().unwrap_or("");
+                        annotated.spans.push(Span::styled(
+                            format!("   {} {}", annotation.status.glyph(), comment),
+                            Style::default().fg(fg).add_modifier(Modifier::BOLD | Modifier::ITALIC),
+                        ));
+                    }
+                    annotated
                 } else {
                     line.clone()
                 }
