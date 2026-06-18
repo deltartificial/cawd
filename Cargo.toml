@@ -1,93 +1,253 @@
-[package]
-name = "cawd"
+[workspace]
+members = ["cawd"]
+default-members = ["cawd"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
-edition = "2021"
-description = "Code Aware Workspace Display - Terminal file explorer with syntax highlighting"
+edition = "2024"
+rust-version = "1.93"
+authors = ["deltartificial"]
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/deltartificial/cawd"
+repository = "https://github.com/deltartificial/cawd"
+exclude = [".github/"]
 
-[dependencies]
-ratatui = "0.30"
-crossterm = { version = "0.29", features = ["event-stream"] }
-devicons = "0.6"
-syntect = "5.2"
-two-face = "0.5"
-clap = { version = "4", features = ["derive"] }
-color-eyre = "0.6"
-chrono = "0.4"
+# ============================================================================
+# LINTS
+# ============================================================================
 
-[dev-dependencies]
-two-face = "0.5"
+[workspace.lints.rust]
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+rust_2018_idioms = { level = "deny", priority = -1 }
+unreachable_pub = "warn"
+unused_must_use = "deny"
+redundant_imports = "warn"
+redundant_lifetimes = "warn"
+rust_2024_incompatible_pat = "warn"
+unnameable_types = "warn"
+elided_lifetimes_in_paths = "warn"
+explicit_outlives_requirements = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+unused_extern_crates = "warn"
+unused_lifetimes = "warn"
+unexpected_cfgs = "warn"
 
-[lints.clippy]
-# Enable pedantic lints for stricter code quality
-# Priority -1 so individual lint settings override
-pedantic = { level = "warn", priority = -1 }
+[workspace.lints.rustdoc]
+all = "warn"
 
-# Pedantic overrides - these are too noisy or don't fit this codebase
-missing_errors_doc = "allow"        # Requires extensive documentation work
-missing_panics_doc = "allow"        # Requires extensive documentation work
-must_use_candidate = "allow"        # Very noisy, too subjective
-doc_markdown = "allow"              # Backticks in docs - low value for effort
-similar_names = "allow"             # Often false positives
-too_many_lines = "allow"            # Subjective function length
-module_name_repetitions = "allow"   # FooModule::Foo patterns are common and fine
-struct_excessive_bools = "allow"    # Sometimes structs legitimately need multiple bools
-fn_params_excessive_bools = "allow" # Sometimes functions legitimately need multiple bools
-items_after_statements = "allow"    # Style preference, not harmful
-uninlined_format_args = "allow"     # format!("{}", x) vs format!("{x}") is minor
-return_self_not_must_use = "allow"  # Builder pattern returns
-# Cast lints - many false positives in contexts where values are known to be in range
-cast_possible_truncation = "allow"
-cast_sign_loss = "allow"
-cast_precision_loss = "allow"
-cast_possible_wrap = "allow"
-# Note: cast_lossless is NOT allowed - prefer From::from() for clarity
-# Default::default() vs TypeName::default() is a style preference
-default_trait_access = "allow"
-# Sometimes separate match arms are clearer even if bodies are identical
-match_same_arms = "allow"
-# Some async functions don't await but are async for API consistency or future use
-unused_async = "allow"
-# let...else is newer syntax, current style is fine
-manual_let_else = "allow"
-# Used underscore bindings are sometimes intentional for documentation
-used_underscore_binding = "allow"
-# &Option<T> vs Option<&T> - sometimes &Option is intentional
-ref_option_ref = "allow"
-ref_option = "allow"
-# Appending format! to String - push_str with format is equivalent
-format_push_string = "allow"
-# Case-sensitive extension comparison is often intentional
-case_sensitive_file_extension_comparisons = "allow"
-# Unnecessary wrapping in Result - sometimes for API consistency
-unnecessary_wraps = "allow"
-# Passing by value when not consumed - often cleaner API design
-needless_pass_by_value = "allow"
-# Small Copy types by reference - often for API consistency
-trivially_copy_pass_by_ref = "allow"
-# Underscore-prefixed bindings - used for documentation or future use
-no_effect_underscore_binding = "allow"
-# Closure vs method reference - closure syntax is clearer: .map(|s| s.to_string())
-redundant_closure_for_method_calls = "allow"
+[workspace.lints.clippy]
+# Lint groups (applied first with priority)
+correctness = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
 
-# Panic safety - deny any operations that could panic
+# Nursery lints enabled
+borrow_as_ptr = "warn"
+branches_sharing_code = "warn"
+clear_with_drain = "warn"
+cloned_instead_of_copied = "warn"
+collection_is_never_read = "warn"
+dbg_macro = "warn"
+derive_partial_eq_without_eq = "warn"
+doc_markdown = "warn"
+empty_line_after_doc_comments = "warn"
+empty_line_after_outer_attr = "warn"
+enum_glob_use = "warn"
+equatable_if_let = "warn"
+explicit_into_iter_loop = "warn"
+explicit_iter_loop = "warn"
+flat_map_option = "warn"
+from_iter_instead_of_collect = "warn"
+if_not_else = "warn"
+if_then_some_else_none = "warn"
+implicit_clone = "warn"
+imprecise_flops = "warn"
+iter_on_empty_collections = "warn"
+iter_on_single_items = "warn"
+iter_with_drain = "warn"
+iter_without_into_iter = "warn"
+large_stack_frames = "warn"
+manual_assert = "warn"
+manual_clamp = "warn"
+manual_is_variant_and = "warn"
+manual_string_new = "warn"
+match_same_arms = "warn"
+missing_const_for_fn = "warn"
+mutex_integer = "warn"
+naive_bytecount = "warn"
+needless_bitwise_bool = "warn"
+needless_continue = "warn"
+needless_for_each = "warn"
+needless_pass_by_ref_mut = "warn"
+nonstandard_macro_braces = "warn"
+option_as_ref_cloned = "warn"
+or_fun_call = "warn"
+path_buf_push_overwrite = "warn"
+read_zero_byte_vec = "warn"
+redundant_clone = "warn"
+redundant_else = "warn"
+single_char_pattern = "warn"
+string_lit_as_bytes = "warn"
+string_lit_chars_any = "warn"
+suboptimal_flops = "warn"
+suspicious_operation_groupings = "warn"
+trailing_empty_array = "warn"
+trait_duplication_in_bounds = "warn"
+transmute_undefined_repr = "warn"
+trivial_regex = "warn"
+tuple_array_conversions = "warn"
+type_repetition_in_bounds = "warn"
+uninhabited_references = "warn"
+uninlined_format_args = "warn"
+unnecessary_self_imports = "warn"
+unnecessary_struct_initialization = "warn"
+unnested_or_patterns = "warn"
+unused_peekable = "warn"
+unused_rounding = "warn"
+use_self = "warn"
+useless_let_if_seq = "warn"
+while_float = "warn"
+zero_sized_map_values = "warn"
+
+# Additional quality and safety lints
+await_holding_lock = "warn"
+exit = "warn"
+filter_map_next = "warn"
+fn_params_excessive_bools = "warn"
+inefficient_to_string = "warn"
+linkedlist = "warn"
+lossy_float_literal = "warn"
+macro_use_imports = "warn"
+mem_forget = "warn"
+must_use_candidate = "warn"
+needless_borrow = "warn"
+option_option = "warn"
+ref_option = "warn"
+rest_pat_in_fully_bound_structs = "warn"
+return_self_not_must_use = "warn"
+single_match_else = "warn"
+verbose_file_reads = "warn"
+todo = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+str_to_string = "warn"
+rc_buffer = "warn"
+
+# TIER 1: Critical enforcement (restriction group)
 unwrap_used = "deny"
 expect_used = "deny"
-panic = "deny"
-# Note: indexing_slicing lint is too strict and flags many safe uses
-# Instead, we rely on careful code review and bounds checking
+panic = "warn"
+unimplemented = "warn"
+clone_on_ref_ptr = "warn"
+missing_assert_message = "warn"
+allow_attributes_without_reason = "warn"
 
-# Prohibit all allow attributes - no exceptions
-allow_attributes = "deny"
+# TIER 2: Best practices (restriction + pedantic)
+wildcard_enum_match_arm = "warn"
+map_err_ignore = "warn"
+let_underscore_must_use = "warn"
+tests_outside_test_module = "warn"
+shadow_reuse = "warn"
+shadow_same = "warn"
+empty_drop = "warn"
+deref_by_slicing = "warn"
+create_dir = "warn"
+checked_conversions = "warn"
+default_trait_access = "warn"
 
-# Allow large error types - error types need rich context for good UX
+# Explicitly allowed (too many false positives)
+len_without_is_empty = "allow"
+new_ret_no_self = "allow"
+wrong_self_convention = "allow"
 result_large_err = "allow"
+as_ptr_cast_mut = "allow"
+cognitive_complexity = "allow"
+debug_assert_with_mut_call = "allow"
+fallible_impl_from = "allow"
+future_not_send = "allow"
+needless_collect = "allow"
+non_send_fields_in_send_ty = "allow"
+redundant_pub_crate = "allow"
+significant_drop_in_scrutinee = "allow"
+significant_drop_tightening = "allow"
+too_long_first_doc_paragraph = "allow"
+octal_escapes = "allow"
+literal_string_with_formatting_args = "allow"
+# unwrap_or is banned via disallowed-methods; suppress the lint that suggests using it
+manual_unwrap_or = "allow"
 
-# No debug macros in production code
-dbg_macro = "deny"
-# No incomplete code markers
-todo = "deny"
-unimplemented = "deny"
-# Use tracing instead of println/eprintln in library code
-# CLI crates override this via #![allow(...)] in lib.rs/main.rs
-print_stdout = "deny"
-print_stderr = "deny"
+# ============================================================================
+# WORKSPACE DEPENDENCIES
+# ============================================================================
+
+[workspace.dependencies]
+# Add your workspace dependencies here
+
+[workspace.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+# ============================================================================
+# BUILD PROFILES
+# ============================================================================
+
+# Fast dev builds with minimal debug info
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
+# Optimize heavy dependencies even in dev builds
+[profile.dev.package]
+serde_json.opt-level = 3
+serde.opt-level = 3
+clap.opt-level = 3
+clap_builder.opt-level = 3
+clap_lex.opt-level = 3
+sha2.opt-level = 3
+rand.opt-level = 3
+regex.opt-level = 3
+regex-syntax.opt-level = 3
+regex-automata.opt-level = 3
+hashbrown.opt-level = 3
+foldhash.opt-level = 3
+
+# Integration tests: optimized but with debug assertions
+[profile.hivetests]
+inherits = "test"
+opt-level = 3
+lto = "thin"
+
+# Release: optimized, stripped, unwind for graceful error handling
+[profile.release]
+opt-level = 3
+lto = "thin"
+debug = "none"
+strip = "debuginfo"
+panic = "unwind"
+codegen-units = 16
+
+# Release: optimize cold crates for size
+[profile.release.package]
+clap_builder.opt-level = "s"
+
+# Profiling: release with debug symbols
+[profile.profiling]
+inherits = "release"
+debug = "full"
+strip = "none"
+
+# Bench: inherits profiling
+[profile.bench]
+inherits = "profiling"
+
+# Max perf: most aggressive (distribution, final binary)
+[profile.maxperf]
+inherits = "release"
+lto = "fat"
+strip = "symbols"
+panic = "abort"
+codegen-units = 1
