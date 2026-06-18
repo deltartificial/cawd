@@ -1,0 +1,2 @@
+# This file lists commits that should be ignored by `git blame`.
+# To use: git config blame.ignoreRevsFile .git-blame-ignore-revs

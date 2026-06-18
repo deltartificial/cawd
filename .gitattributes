@@ -1,0 +1,22 @@
+# Rust diff heuristics
+*.rs diff=rust
+
+# Enforce LF line endings for cross-platform consistency
+* text=auto eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.wasm binary
+
+# Generated files
+*.lock linguist-generated
+dprint.json linguist-language=JSON-with-Comments
