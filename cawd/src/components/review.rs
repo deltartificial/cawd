@@ -1,18 +1,24 @@
 //! Review panel: lists code annotations, tracks their status, and dispatches
 //! headless Claude Code workers to address them.
 
-use crate::action::Action;
-use crate::annotation::{Annotation, AnnotationStatus};
-use crate::components::Component;
+use crate::{
+    action::Action,
+    annotation::{Annotation, AnnotationStatus},
+    components::Component,
+};
 use crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
-use ratatui::Frame;
-use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
-use std::time::Instant;
+use ratatui::{
+    Frame,
+    layout::{Constraint, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+};
+use std::{
+    path::PathBuf,
+    process::{Child, Command, Stdio},
+    time::Instant,
+};
 
 /// A worker process addressing a specific annotation.
 struct Worker {
@@ -40,7 +46,7 @@ struct FinishedWorker {
 ///
 /// Displays all annotations stored under `.cawd/`, lets the user change their
 /// status, open the annotated location, and launch a worker on each one.
-pub struct Review {
+pub(crate) struct Review {
     root: PathBuf,
     annotations: Vec<Annotation>,
     /// Indices into `annotations` that are currently shown (filtered list).
@@ -59,7 +65,7 @@ impl Review {
     const FINISHED_HISTORY: usize = 20;
 
     /// Creates a new review panel and loads existing annotations.
-    pub fn new(root: PathBuf) -> Self {
+    pub(crate) fn new(root: PathBuf) -> Self {
         let mut review = Self {
             root,
             annotations: Vec::new(),
@@ -78,7 +84,7 @@ impl Review {
     fn location_label(annotation: &Annotation) -> String {
         format!(
             "{} L{}",
-            annotation.file.rsplit('/').next().unwrap_or(&annotation.file),
+            annotation.file.rsplit('/').next().map_or(annotation.file.as_str(), |it| it),
             annotation.lines
         )
     }
@@ -97,9 +103,8 @@ impl Review {
         if self.visible_indices.is_empty() {
             self.list_state.select(None);
         } else {
-            let current = self.list_state.selected().unwrap_or(0);
-            self.list_state
-                .select(Some(current.min(self.visible_indices.len() - 1)));
+            let current = self.list_state.selected().unwrap_or_default();
+            self.list_state.select(Some(current.min(self.visible_indices.len() - 1)));
         }
     }
 
@@ -108,10 +113,7 @@ impl Review {
         if self.show_resolved {
             0
         } else {
-            self.annotations
-                .iter()
-                .filter(|a| a.status == AnnotationStatus::Resolved)
-                .count()
+            self.annotations.iter().filter(|a| a.status == AnnotationStatus::Resolved).count()
         }
     }
 
@@ -122,19 +124,16 @@ impl Review {
     }
 
     /// Reloads annotations from disk, preserving the current selection by id.
-    pub fn refresh(&mut self) {
+    pub(crate) fn refresh(&mut self) {
         let selected_id = self.selected().map(|a| a.id.clone());
         self.annotations = Annotation::load_all(&self.root);
         self.update_visible();
 
-        if let Some(id) = selected_id {
-            if let Some(pos) = self
-                .visible_indices
-                .iter()
-                .position(|&i| self.annotations[i].id == id)
-            {
-                self.list_state.select(Some(pos));
-            }
+        if let Some(id) = selected_id &&
+            let Some(pos) =
+                self.visible_indices.iter().position(|&i| self.annotations[i].id == id)
+        {
+            self.list_state.select(Some(pos));
         }
     }
 
@@ -142,7 +141,7 @@ impl Review {
     ///
     /// A worker that exits successfully marks its annotation `resolved`; any
     /// other outcome returns it to `open` so it can be retried.
-    pub fn poll_workers(&mut self) {
+    pub(crate) fn poll_workers(&mut self) {
         struct Done {
             index: usize,
             id: String,
@@ -176,13 +175,10 @@ impl Review {
         for entry in done.into_iter().rev() {
             self.workers.remove(entry.index);
             if let Some(annotation) = self.annotations.iter_mut().find(|a| a.id == entry.id) {
-                annotation.status = if entry.success {
-                    AnnotationStatus::Resolved
-                } else {
-                    AnnotationStatus::Open
-                };
+                annotation.status =
+                    if entry.success { AnnotationStatus::Resolved } else { AnnotationStatus::Open };
                 annotation.worker_pid = None;
-                let _ = annotation.save();
+                _ = annotation.save();
             }
             self.finished.push(FinishedWorker {
                 location: entry.location,
@@ -215,7 +211,7 @@ impl Review {
         if len == 0 {
             return;
         }
-        let current = self.list_state.selected().unwrap_or(0);
+        let current = self.list_state.selected().unwrap_or_default();
         let new = if current == 0 { len - 1 } else { current - 1 };
         self.list_state.select(Some(new));
     }
@@ -226,7 +222,7 @@ impl Review {
         if len == 0 {
             return;
         }
-        let current = self.list_state.selected().unwrap_or(0);
+        let current = self.list_state.selected().unwrap_or_default();
         let new = if current >= len - 1 { 0 } else { current + 1 };
         self.list_state.select(Some(new));
     }
@@ -248,7 +244,7 @@ impl Review {
         if let Some(i) = self.real_index() {
             if let Some(annotation) = self.annotations.get_mut(i) {
                 annotation.status = annotation.status.next();
-                let _ = annotation.save();
+                _ = annotation.save();
             }
             self.update_visible();
         }
@@ -256,13 +252,13 @@ impl Review {
 
     /// Deletes the selected annotation from disk and the list.
     fn delete_selected(&mut self) {
-        if let Some(i) = self.real_index() {
-            if i < self.annotations.len() {
-                let annotation = self.annotations.remove(i);
-                let _ = annotation.delete();
-                self.message = Some(format!("Deleted annotation {}", annotation.id));
-                self.update_visible();
-            }
+        if let Some(i) = self.real_index() &&
+            i < self.annotations.len()
+        {
+            let annotation = self.annotations.remove(i);
+            _ = annotation.delete();
+            self.message = Some(format!("Deleted annotation {}", annotation.id));
+            self.update_visible();
         }
     }
 
@@ -292,7 +288,7 @@ impl Review {
             return;
         };
         if annotation.status == AnnotationStatus::InProgress {
-            self.message = Some("A worker is already running on this annotation".to_string());
+            self.message = Some("A worker is already running on this annotation".to_owned());
             return;
         }
 
@@ -302,22 +298,22 @@ impl Review {
 
         let log_dir = Annotation::dir(&self.root).join("logs");
         if let Err(e) = std::fs::create_dir_all(&log_dir) {
-            self.message = Some(format!("Failed to create log dir: {}", e));
+            self.message = Some(format!("Failed to create log dir: {e}"));
             return;
         }
 
-        let (stdout, stderr) = match std::fs::File::create(log_dir.join(format!("{}.log", id))) {
+        let (stdout, stderr) = match std::fs::File::create(log_dir.join(format!("{id}.log"))) {
             Ok(file) => match file.try_clone() {
                 Ok(clone) => (Stdio::from(file), Stdio::from(clone)),
                 Err(_) => (Stdio::null(), Stdio::null()),
             },
             Err(e) => {
-                self.message = Some(format!("Failed to open log file: {}", e));
+                self.message = Some(format!("Failed to open log file: {e}"));
                 return;
             }
         };
 
-        let child = Command::new("claude")
+        let spawn_result = Command::new("claude")
             .arg("-p")
             .arg(&prompt)
             .arg("--dangerously-skip-permissions")
@@ -327,13 +323,13 @@ impl Review {
             .stderr(stderr)
             .spawn();
 
-        match child {
+        match spawn_result {
             Ok(child) => {
                 let pid = child.id();
                 if let Some(annotation) = self.annotations.get_mut(index) {
                     annotation.status = AnnotationStatus::InProgress;
                     annotation.worker_pid = Some(pid);
-                    let _ = annotation.save();
+                    _ = annotation.save();
                 }
                 self.workers.push(Worker {
                     annotation_id: id,
@@ -341,16 +337,20 @@ impl Review {
                     started: Instant::now(),
                     location,
                 });
-                self.message = Some(format!("Worker started (pid {})", pid));
+                self.message = Some(format!("Worker started (pid {pid})"));
             }
             Err(e) => {
-                self.message = Some(format!("Failed to start worker: {}", e));
+                self.message = Some(format!("Failed to start worker: {e}"));
             }
         }
     }
 }
 
 impl Component for Review {
+    #[allow(
+        clippy::wildcard_enum_match_arm,
+        reason = "crossterm KeyCode/MouseEventKind are non_exhaustive, a catch-all arm is required"
+    )]
     fn handle_key_event(&mut self, key: KeyEvent) -> Action {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
@@ -386,12 +386,9 @@ impl Component for Review {
         }
     }
 
-    fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool) {
-        let chunks = Layout::vertical([
-            Constraint::Percentage(70),
-            Constraint::Percentage(30),
-        ])
-        .split(area);
+    fn render(&mut self, frame: &mut Frame<'_>, area: Rect, focused: bool) {
+        let chunks =
+            Layout::vertical([Constraint::Percentage(70), Constraint::Percentage(30)]).split(area);
 
         self.render_annotations(frame, chunks[0], focused);
         self.render_workers(frame, chunks[1]);
@@ -400,7 +397,7 @@ impl Component for Review {
 
 impl Review {
     /// Renders the annotations list (top section of the review panel).
-    fn render_annotations(&mut self, frame: &mut Frame, area: Rect, focused: bool) {
+    fn render_annotations(&mut self, frame: &mut Frame<'_>, area: Rect, focused: bool) {
         let border_style = if focused {
             Style::default().fg(Color::Cyan)
         } else {
@@ -408,27 +405,17 @@ impl Review {
         };
 
         let orange = Color::Rgb(0xff, 0x7a, 0x5c);
-        let resolved = self
-            .annotations
-            .iter()
-            .filter(|a| a.status == AnnotationStatus::Resolved)
-            .count();
+        let resolved =
+            self.annotations.iter().filter(|a| a.status == AnnotationStatus::Resolved).count();
         let title = if self.show_resolved {
             format!(" \u{f075} Review ({} · all shown) ", self.annotations.len())
         } else if resolved > 0 {
-            format!(
-                " \u{f075} Review ({} active · {} done) ",
-                self.visible_indices.len(),
-                resolved
-            )
+            format!(" \u{f075} Review ({} active · {} done) ", self.visible_indices.len(), resolved)
         } else {
             format!(" \u{f075} Review ({}) ", self.visible_indices.len())
         };
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(border_style)
-            .title(title);
+        let block = Block::default().borders(Borders::ALL).border_style(border_style).title(title);
 
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -441,14 +428,14 @@ impl Review {
 
         let hidden = self.hidden_count();
         let hint_line = if let Some(message) = &self.message {
-            Line::from(format!(" {} ", message)).style(Style::default().fg(orange))
+            Line::from(format!(" {message} ")).style(Style::default().fg(orange))
         } else {
             let label = if self.show_resolved {
-                "hide done".to_string()
+                "hide done".to_owned()
             } else if hidden > 0 {
-                format!("show {} done", hidden)
+                format!("show {hidden} done")
             } else {
-                "show done".to_string()
+                "show done".to_owned()
             };
             Line::from(vec![
                 Span::styled(" a ", Style::default().fg(Color::Gray).add_modifier(Modifier::BOLD)),
@@ -468,7 +455,7 @@ impl Review {
             return;
         }
 
-        let items: Vec<ListItem> = self
+        let items: Vec<ListItem<'_>> = self
             .visible_indices
             .iter()
             .filter_map(|&idx| self.annotations.get(idx))
@@ -479,11 +466,11 @@ impl Review {
                     AnnotationStatus::Resolved => Color::Rgb(0x28, 0xa7, 0x45),
                 };
 
-                let comment_preview: String = annotation.comment.lines().next().unwrap_or("").to_string();
-                let comment_preview = if comment_preview.chars().count() > 30 {
-                    format!("{}…", comment_preview.chars().take(30).collect::<String>())
+                let first_line = annotation.comment.lines().next().unwrap_or_default();
+                let comment_preview = if first_line.chars().count() > 30 {
+                    format!("{}…", first_line.chars().take(30).collect::<String>())
                 } else {
-                    comment_preview
+                    first_line.to_owned()
                 };
 
                 let line = Line::from(vec![
@@ -516,7 +503,7 @@ impl Review {
     ///
     /// Active workers are always shown; finished workers are listed only when
     /// "show all" (`a`) is toggled on.
-    fn render_workers(&self, frame: &mut Frame, area: Rect) {
+    fn render_workers(&self, frame: &mut Frame<'_>, area: Rect) {
         let title = if self.show_resolved && !self.finished.is_empty() {
             format!(
                 " \u{f085} Workers ({} active · {} done) ",
@@ -540,9 +527,8 @@ impl Review {
             } else {
                 " No active workers — 'a' to show history "
             };
-            let paragraph = Paragraph::new(text)
-                .block(block)
-                .style(Style::default().fg(Color::DarkGray));
+            let paragraph =
+                Paragraph::new(text).block(block).style(Style::default().fg(Color::DarkGray));
             frame.render_widget(paragraph, area);
             return;
         }
@@ -551,32 +537,44 @@ impl Review {
         let green = Color::Rgb(0x28, 0xa7, 0x45);
         let red = Color::Rgb(0xdc, 0x35, 0x45);
 
-        let mut items: Vec<ListItem> = self
+        let mut items: Vec<ListItem<'_>> = self
             .workers
             .iter()
             .map(|worker| {
                 let elapsed = worker.started.elapsed().as_secs();
                 ListItem::new(Line::from(vec![
-                    Span::styled(" \u{25d0} ", Style::default().fg(blue).add_modifier(Modifier::BOLD)),
-                    Span::styled(format!("{:<18} ", worker.location), Style::default().fg(Color::White)),
-                    Span::styled(format!("pid {} ", worker.child.id()), Style::default().fg(Color::DarkGray)),
-                    Span::styled(format!("{}s", elapsed), Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        " \u{25d0} ",
+                        Style::default().fg(blue).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("{:<18} ", worker.location),
+                        Style::default().fg(Color::White),
+                    ),
+                    Span::styled(
+                        format!("pid {} ", worker.child.id()),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::styled(format!("{elapsed}s"), Style::default().fg(Color::DarkGray)),
                 ]))
             })
             .collect();
 
         if show_finished {
             for finished in self.finished.iter().rev() {
-                let (glyph, color, label) = if finished.success {
-                    ("●", green, "done")
-                } else {
-                    ("✗", red, "failed")
-                };
+                let (glyph, color, label) =
+                    if finished.success { ("●", green, "done") } else { ("✗", red, "failed") };
                 items.push(ListItem::new(Line::from(vec![
-                    Span::styled(format!(" {} ", glyph), Style::default().fg(color)),
-                    Span::styled(format!("{:<18} ", finished.location), Style::default().fg(Color::DarkGray)),
-                    Span::styled(format!("{} ", label), Style::default().fg(color)),
-                    Span::styled(format!("{}s", finished.elapsed_secs), Style::default().fg(Color::DarkGray)),
+                    Span::styled(format!(" {glyph} "), Style::default().fg(color)),
+                    Span::styled(
+                        format!("{:<18} ", finished.location),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::styled(format!("{label} "), Style::default().fg(color)),
+                    Span::styled(
+                        format!("{}s", finished.elapsed_secs),
+                        Style::default().fg(Color::DarkGray),
+                    ),
                 ])));
             }
         }
