@@ -1,0 +1,72 @@
+name: compat
+
+# Backwards compatibility check template.
+# This workflow is designed to verify that changes do not break backwards
+# compatibility (e.g., codec encoding/decoding, serialization formats).
+#
+# To integrate with a codec crate:
+# 1. Set `generate-command` to produce test vectors from main (e.g., `cargo run --bin generate-vectors`)
+# 2. Set `verify-command` to validate those vectors against the PR branch (e.g., `cargo run --bin verify-vectors`)
+# 3. Optionally trigger this workflow on pull_request events once commands are configured.
+
+on:
+  workflow_dispatch:
+    inputs:
+      generate-command:
+        description: "Command to generate test vectors from main branch"
+        required: true
+        default: "echo 'No generate command configured'"
+      verify-command:
+        description: "Command to verify test vectors against PR branch"
+        required: true
+        default: "echo 'No verify command configured'"
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  compat:
+    name: backwards compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Generate test vectors from main
+        run: ${{ inputs.generate-command }}
+
+      - name: Save test vectors
+        run: |
+          mkdir -p /tmp/compat-vectors
+          if [ -d test-vectors ]; then
+            cp -r test-vectors /tmp/compat-vectors/
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Restore test vectors
+        run: |
+          if [ -d /tmp/compat-vectors/test-vectors ]; then
+            cp -r /tmp/compat-vectors/test-vectors .
+          fi
+
+      - name: Verify backwards compatibility
+        run: ${{ inputs.verify-command }}

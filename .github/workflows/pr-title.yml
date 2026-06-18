@@ -1,0 +1,37 @@
+name: pr title
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize]
+
+permissions: {}
+
+jobs:
+  check:
+    name: conventional commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            chore
+            test
+            bench
+            perf
+            refactor
+            docs
+            ci
+            revert
+            deps
+          requireScope: false
+          subjectPattern: ^[a-z].+$
+          subjectPatternError: |
+            The subject must start with a lowercase letter.
+            Example: "feat: add new feature" or "fix(core): resolve panic"
