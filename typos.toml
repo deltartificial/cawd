@@ -1,0 +1,58 @@
+[files]
+extend-exclude = [
+  ".git",
+  "target",
+  "testdata",
+  "test-data",
+  "bench_data",
+  "Cargo.toml",
+  "Cargo.lock",
+  "*.json",
+  "*.js",
+  "*.css",
+  "*.html",
+  "**/tests/**",
+  "**/test/**",
+  "**/*_test.*",
+  "**/*_tests.*",
+]
+
+[default]
+# Ignore very short words (≤4 chars) - likely acronyms or noise
+extend-ignore-words-re = [
+  "^[a-zA-Z]{1,4}$",
+]
+
+extend-ignore-re = [
+  # Hex addresses (various lengths)
+  "(?i)0x[0-9a-f]{8}",
+  "(?i)0x[0-9a-f]{40}",
+  "(?i)0x[0-9a-f]{64}",
+  "(?i)[0-9a-f]{8}",
+  "(?i)[0-9a-f]{40}",
+  "(?i)[0-9a-f]{64}",
+  # Ordinal numbers
+  "[0-9]+nd",
+  "[0-9]+th",
+  "[0-9]+st",
+  "[0-9]+rd",
+  # Allow disabling spell checking in code regions
+  # Usage: // spellchecker:off ... // spellchecker:on
+  "(?s)(#|//)\\s*spellchecker:off.*?\\n\\s*(#|//)\\s*spellchecker:on",
+]
+
+# Allowlist: words that look like typos but are valid
+# (alphabetically sorted for maintainability)
+[default.extend-words]
+consts = "consts"
+Consts = "Consts"
+inout = "inout"
+makro = "makro"
+optin = "optin"
+ratatui = "ratatui"
+ser = "ser"
+
+# Allowlist for specific identifiers (camelCase/external APIs)
+[default.extend-identifiers]
+datas = "datas"
+selfs = "selfs"
