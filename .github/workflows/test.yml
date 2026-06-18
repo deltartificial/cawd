@@ -102,7 +102,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-      - run: cargo +nightly update -Z minimal-versions
+      # cawd is a binary, not a published library: only its own declared
+      # dependency floors are meaningful. Full `-Z minimal-versions` would also
+      # pin the whole transitive tree (e.g. syntect → flate2 → miniz-sys → gcc),
+      # which is the dependencies' responsibility and is not buildable here.
+      - run: cargo +nightly update -Z direct-minimal-versions
       - run: cargo +stable check --workspace --all-features
         env:
           RUSTC_WRAPPER: sccache
