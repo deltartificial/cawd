@@ -4,6 +4,7 @@
 //! Use alongside AI coding assistants to visually verify generated code in real-time.
 
 mod action;
+mod annotation;
 mod app;
 mod components;
 mod tui;

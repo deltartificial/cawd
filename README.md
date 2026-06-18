@@ -42,5 +42,34 @@ cawd [path]
 | Enter | Open file |
 | Ctrl+P | Search files |
 | / | Filter/Search |
+| Mouse drag | Select lines (code viewer) |
+| c | Comment selected lines |
 | Tab | Switch panel |
 | q | Quit |
+
+## Annotations & Review
+
+In the code viewer, drag with the mouse to select one or more lines, then press
+`c` to write a comment. The annotation is saved to a timestamped markdown file
+under `.cawd/` at the project root, capturing the file path, line range, the
+selected code excerpt, and your comment — handy for reviewing AI-generated code.
+
+The **Review** tab (cycle with `Tab`) lists every annotation with a status badge
+(○ open · ◐ in progress · ● resolved):
+
+| Key | Action |
+|-----|--------|
+| j/k | Navigate annotations |
+| Enter | Open the annotated file at its lines |
+| w | Dispatch a worker on the annotation |
+| s | Cycle status (open → in progress → resolved) |
+| d | Delete the annotation |
+
+Pressing `w` launches a **headless Claude Code worker** (`claude -p … --dangerously-skip-permissions`)
+from the project root that picks up the task built from the comment, code excerpt
+and line range. The annotation moves to *in progress*; when the worker exits
+cleanly it is marked *resolved* automatically (otherwise it returns to *open*).
+Worker output is streamed to `.cawd/logs/<id>.log`.
+
+> Note: workers edit files directly in the repository without confirmation. They
+> run as child processes of cawd, so quitting cawd stops any in-flight workers.

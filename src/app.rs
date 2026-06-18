@@ -5,6 +5,7 @@ use crate::components::code_viewer::CodeViewer;
 use crate::components::file_tree::FileTree;
 use crate::components::git_status::GitStatus;
 use crate::components::help_bar::HelpBar;
+use crate::components::review::Review;
 use crate::components::search_modal::SearchModal;
 use crate::components::Component;
 use crate::tui::Tui;
@@ -22,6 +23,8 @@ pub enum Panel {
     FileTree,
     /// Git status panel showing changed files.
     GitStatus,
+    /// Review panel listing code annotations.
+    Review,
     /// Code viewer panel with syntax highlighting.
     CodeViewer,
 }
@@ -33,6 +36,7 @@ pub enum Panel {
 pub struct App {
     file_tree: FileTree,
     git_status: GitStatus,
+    review: Review,
     code_viewer: CodeViewer,
     help_bar: HelpBar,
     search_modal: SearchModal,
@@ -62,7 +66,8 @@ impl App {
         Ok(Self {
             file_tree: FileTree::new(path.clone())?,
             git_status: GitStatus::new(root.clone()),
-            code_viewer: CodeViewer::new(),
+            review: Review::new(root.clone()),
+            code_viewer: CodeViewer::new(root.clone()),
             help_bar: HelpBar::new(),
             search_modal: SearchModal::new(root.clone()),
             active_panel: Panel::FileTree,
@@ -121,16 +126,21 @@ impl App {
         ])
         .split(content_area);
 
-        let left_layout = Layout::vertical([
-            Constraint::Percentage(75),
-            Constraint::Percentage(25),
-        ])
-        .split(content_layout[0]);
+        if self.active_panel == Panel::Review {
+            self.review.render(frame, content_layout[0], true);
+        } else {
+            let left_layout = Layout::vertical([
+                Constraint::Percentage(75),
+                Constraint::Percentage(25),
+            ])
+            .split(content_layout[0]);
 
-        self.file_tree
-            .render(frame, left_layout[0], self.active_panel == Panel::FileTree);
-        self.git_status
-            .render(frame, left_layout[1], self.active_panel == Panel::GitStatus);
+            self.file_tree
+                .render(frame, left_layout[0], self.active_panel == Panel::FileTree);
+            self.git_status
+                .render(frame, left_layout[1], self.active_panel == Panel::GitStatus);
+        }
+
         self.code_viewer
             .render(frame, content_layout[1], self.active_panel == Panel::CodeViewer);
 
@@ -139,7 +149,9 @@ impl App {
             || self.code_viewer.is_search_mode();
         let in_code_viewer = self.active_panel == Panel::CodeViewer && self.code_viewer.has_file();
         let in_git_status = self.active_panel == Panel::GitStatus;
-        self.help_bar.set_context(search_mode, in_code_viewer, in_git_status);
+        let in_review = self.active_panel == Panel::Review;
+        self.help_bar
+            .set_context(search_mode, in_code_viewer, in_git_status, in_review);
         self.help_bar.render(frame, help_area);
 
         self.search_modal.render(frame);
@@ -164,6 +176,12 @@ impl App {
             Style::default().fg(Color::DarkGray)
         };
 
+        let review_style = if self.active_panel == Panel::Review {
+            Style::default().fg(dark_text).bg(orange).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
         let code_style = if self.active_panel == Panel::CodeViewer {
             Style::default().fg(dark_text).bg(orange).add_modifier(Modifier::BOLD)
         } else {
@@ -176,6 +194,8 @@ impl App {
             Span::styled(" \u{f07b} Explorer ", explorer_style),
             Span::raw(" "),
             Span::styled(" \u{f126} Changes ", git_style),
+            Span::raw(" "),
+            Span::styled(" \u{f075} Review ", review_style),
             Span::raw(" "),
             Span::styled(format!(" \u{f15b} {} ", file_name), code_style),
             Span::raw("  "),
@@ -203,7 +223,16 @@ impl App {
         };
 
         if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
+            let evt = event::read()?;
+
+            if let Event::Mouse(mouse) = evt {
+                if self.code_viewer.handle_mouse_event(mouse) {
+                    self.active_panel = Panel::CodeViewer;
+                }
+                return Ok(());
+            }
+
+            if let Event::Key(key) = evt {
                 if key.kind != KeyEventKind::Press {
                     return Ok(());
                 }
@@ -238,6 +267,12 @@ impl App {
                     return Ok(());
                 }
 
+                if self.code_viewer.is_commenting() {
+                    let action = self.code_viewer.handle_key_event(key);
+                    self.handle_action(action)?;
+                    return Ok(());
+                }
+
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('p') {
                     self.search_modal.open();
                     return Ok(());
@@ -254,9 +289,13 @@ impl App {
                 if key.code == KeyCode::Tab {
                     self.active_panel = match self.active_panel {
                         Panel::FileTree => Panel::GitStatus,
-                        Panel::GitStatus => Panel::CodeViewer,
+                        Panel::GitStatus => Panel::Review,
+                        Panel::Review => Panel::CodeViewer,
                         Panel::CodeViewer => Panel::FileTree,
                     };
+                    if self.active_panel == Panel::Review {
+                        self.review.refresh();
+                    }
                     return Ok(());
                 }
 
@@ -264,14 +303,19 @@ impl App {
                     self.active_panel = match self.active_panel {
                         Panel::FileTree => Panel::CodeViewer,
                         Panel::GitStatus => Panel::FileTree,
-                        Panel::CodeViewer => Panel::GitStatus,
+                        Panel::Review => Panel::GitStatus,
+                        Panel::CodeViewer => Panel::Review,
                     };
+                    if self.active_panel == Panel::Review {
+                        self.review.refresh();
+                    }
                     return Ok(());
                 }
 
                 let action = match self.active_panel {
                     Panel::FileTree => self.file_tree.handle_key_event(key),
                     Panel::GitStatus => self.git_status.handle_key_event(key),
+                    Panel::Review => self.review.handle_key_event(key),
                     Panel::CodeViewer => self.code_viewer.handle_key_event(key),
                 };
 
@@ -281,6 +325,8 @@ impl App {
 
         if self.last_git_refresh.elapsed().as_secs() >= 2 {
             self.git_status.refresh();
+            self.review.poll_workers();
+            self.review.refresh();
             self.last_git_refresh = Instant::now();
         }
 
@@ -307,6 +353,14 @@ impl App {
                     self.code_viewer.show_error(&e.to_string());
                 }
                 self.active_panel = Panel::CodeViewer;
+            }
+            Action::AnnotationOpen { path, line } => {
+                // Keep focus on the review panel; show the code on the right.
+                if let Err(e) = self.code_viewer.load_file(path) {
+                    self.code_viewer.show_error(&e.to_string());
+                } else {
+                    self.code_viewer.scroll_to_line(line);
+                }
             }
             _ => {}
         }

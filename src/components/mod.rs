@@ -7,6 +7,7 @@ pub mod code_viewer;
 pub mod file_tree;
 pub mod git_status;
 pub mod help_bar;
+pub mod review;
 pub mod search;
 pub mod search_modal;
 

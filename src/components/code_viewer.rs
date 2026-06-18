@@ -1,8 +1,9 @@
 //! Code viewer component with syntax highlighting and search.
 
 use crate::action::Action;
+use crate::annotation::{Annotation, AnnotationStatus};
 use crate::components::Component;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 
 /// The display mode for the code viewer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -40,11 +41,32 @@ pub struct CodeViewer {
     search_list_state: ListState,
     animation_frame: u64,
     view_mode: ViewMode,
+    /// Project root, used to resolve the `.cawd/` annotation directory.
+    root: PathBuf,
+    /// Inner content area of the last render, used to map mouse rows to lines.
+    view_area: Rect,
+    /// Start line index of the current selection (inclusive).
+    selection_anchor: Option<usize>,
+    /// End line index of the current selection (inclusive); moves while dragging.
+    selection_cursor: Option<usize>,
+    /// Whether a left-button drag selection is in progress.
+    is_dragging: bool,
+    /// Whether the comment input modal is open.
+    comment_mode: bool,
+    /// Current text entered in the comment modal.
+    comment_input: String,
+    /// Transient status message shown after saving an annotation.
+    status_message: Option<String>,
 }
 
 impl CodeViewer {
     /// Creates a new code viewer instance.
-    pub fn new() -> Self {
+    ///
+    /// # Parameters
+    ///
+    /// * `root` - The project root, used to locate the `.cawd/` directory
+    ///   where code annotations are saved.
+    pub fn new(root: PathBuf) -> Self {
         Self {
             content: Vec::new(),
             highlighted_lines: Vec::new(),
@@ -59,6 +81,14 @@ impl CodeViewer {
             search_list_state: ListState::default(),
             animation_frame: 0,
             view_mode: ViewMode::default(),
+            root,
+            view_area: Rect::default(),
+            selection_anchor: None,
+            selection_cursor: None,
+            is_dragging: false,
+            comment_mode: false,
+            comment_input: String::new(),
+            status_message: None,
         }
     }
 
@@ -79,6 +109,8 @@ impl CodeViewer {
         self.search_query.clear();
         self.search_matches.clear();
         self.view_mode = ViewMode::Code;
+        self.clear_selection();
+        self.status_message = None;
 
         self.highlight_content(&path);
 
@@ -155,6 +187,8 @@ impl CodeViewer {
         self.search_query.clear();
         self.search_matches.clear();
         self.view_mode = ViewMode::Diff;
+        self.clear_selection();
+        self.status_message = None;
 
         self.highlight_diff();
 
@@ -307,6 +341,192 @@ impl CodeViewer {
     /// Scrolls to the bottom of the file.
     fn scroll_to_bottom(&mut self) {
         self.scroll_offset = self.content.len().saturating_sub(1);
+    }
+
+    /// Clears the current line selection.
+    fn clear_selection(&mut self) {
+        self.selection_anchor = None;
+        self.selection_cursor = None;
+        self.is_dragging = false;
+    }
+
+    /// Returns the selected line range as `(start, end)` indices, ordered.
+    ///
+    /// Returns `None` when no selection is active.
+    fn selected_range(&self) -> Option<(usize, usize)> {
+        match (self.selection_anchor, self.selection_cursor) {
+            (Some(a), Some(b)) => Some((a.min(b), a.max(b))),
+            _ => None,
+        }
+    }
+
+    /// Maps a terminal row to a content line index within the current view.
+    ///
+    /// Returns `None` when the row is outside the rendered content area or
+    /// beyond the end of the file.
+    fn row_to_line(&self, row: u16) -> Option<usize> {
+        let top = self.view_area.y;
+        let bottom = self.view_area.y.saturating_add(self.view_area.height);
+        if row < top || row >= bottom {
+            return None;
+        }
+        let line = self.scroll_offset + (row - top) as usize;
+        if line < self.content.len() {
+            Some(line)
+        } else {
+            None
+        }
+    }
+
+    /// Returns whether a point lies within the rendered content area.
+    fn area_contains(&self, column: u16, row: u16) -> bool {
+        let a = self.view_area;
+        column >= a.x
+            && column < a.x.saturating_add(a.width)
+            && row >= a.y
+            && row < a.y.saturating_add(a.height)
+    }
+
+    /// Handles a mouse event, returning whether it was consumed.
+    ///
+    /// Left click-and-drag selects a range of lines; the scroll wheel scrolls
+    /// the view. Selection is only available in [`ViewMode::Code`].
+    pub fn handle_mouse_event(&mut self, mouse: MouseEvent) -> bool {
+        if self.file_path.is_none() {
+            return false;
+        }
+
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                if self.view_mode != ViewMode::Code {
+                    return self.area_contains(mouse.column, mouse.row);
+                }
+                if let Some(line) = self.row_to_line(mouse.row) {
+                    self.status_message = None;
+                    self.selection_anchor = Some(line);
+                    self.selection_cursor = Some(line);
+                    self.is_dragging = true;
+                    return true;
+                }
+                self.area_contains(mouse.column, mouse.row)
+            }
+            MouseEventKind::Drag(MouseButton::Left) if self.is_dragging => {
+                // Auto-scroll when dragging past the top/bottom edge.
+                if mouse.row < self.view_area.y {
+                    self.scroll_up(1);
+                } else if mouse.row >= self.view_area.y.saturating_add(self.view_area.height) {
+                    self.scroll_down(1);
+                }
+                let clamped_row = mouse
+                    .row
+                    .clamp(self.view_area.y, self.view_area.y.saturating_add(self.view_area.height).saturating_sub(1));
+                if let Some(line) = self.row_to_line(clamped_row) {
+                    self.selection_cursor = Some(line);
+                }
+                true
+            }
+            MouseEventKind::Up(MouseButton::Left) if self.is_dragging => {
+                self.is_dragging = false;
+                true
+            }
+            MouseEventKind::ScrollDown if self.area_contains(mouse.column, mouse.row) => {
+                self.scroll_down(3);
+                true
+            }
+            MouseEventKind::ScrollUp if self.area_contains(mouse.column, mouse.row) => {
+                self.scroll_up(3);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns whether the comment input modal is currently open.
+    pub fn is_commenting(&self) -> bool {
+        self.comment_mode
+    }
+
+    /// Opens the comment modal for the current selection, if any.
+    fn enter_comment_mode(&mut self) {
+        if self.view_mode == ViewMode::Code && self.selected_range().is_some() {
+            self.comment_mode = true;
+            self.comment_input.clear();
+            self.status_message = None;
+        }
+    }
+
+    /// Closes the comment modal without saving.
+    fn cancel_comment(&mut self) {
+        self.comment_mode = false;
+        self.comment_input.clear();
+    }
+
+    /// Saves the current selection and comment as an annotation file.
+    ///
+    /// Writes a timestamped markdown file under `<root>/.cawd/` containing the
+    /// file path, line range, the selected code excerpt, and the comment.
+    fn save_annotation(&mut self) {
+        let Some((start, end)) = self.selected_range() else {
+            self.cancel_comment();
+            return;
+        };
+        let Some(file_path) = self.file_path.clone() else {
+            self.cancel_comment();
+            return;
+        };
+
+        let now = chrono::Local::now();
+        let id = now.format("%Y-%m-%dT%H-%M-%S").to_string();
+
+        let rel_path = file_path
+            .strip_prefix(&self.root)
+            .unwrap_or(&file_path)
+            .to_string_lossy()
+            .into_owned();
+
+        let line_label = if start == end {
+            format!("{}", start + 1)
+        } else {
+            format!("{}-{}", start + 1, end + 1)
+        };
+
+        let excerpt: String = self
+            .content
+            .get(start..=end.min(self.content.len().saturating_sub(1)))
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+            .map(|(i, line)| format!("{:>4} | {}", start + 1 + i, line))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let annotation = Annotation {
+            id: id.clone(),
+            status: AnnotationStatus::Open,
+            file: rel_path,
+            lines: line_label,
+            start_line: start + 1,
+            date: now.format("%Y-%m-%d %H:%M:%S").to_string(),
+            worker_pid: None,
+            excerpt,
+            comment: self.comment_input.trim_end().to_string(),
+            path: Annotation::dir(&self.root).join(format!("{}.md", id)),
+        };
+
+        self.status_message = Some(match annotation.save() {
+            Ok(()) => format!("Annotation saved to .cawd/{}.md", id),
+            Err(e) => format!("Failed to save annotation: {}", e),
+        });
+
+        self.comment_mode = false;
+        self.comment_input.clear();
+        self.clear_selection();
+    }
+
+    /// Scrolls the view so the given 1-based line is at the top.
+    pub fn scroll_to_line(&mut self, line: usize) {
+        let target = line.saturating_sub(1);
+        self.scroll_offset = target.min(self.content.len().saturating_sub(1));
     }
 
     /// Enters search mode.
@@ -509,6 +729,14 @@ impl CodeViewer {
             Span::styled("  g/G   ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
             Span::styled("Go to top/bottom", Style::default().fg(Color::White)),
         ]));
+        logo.push(Line::from(vec![
+            Span::styled("  drag  ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
+            Span::styled("Select lines with mouse", Style::default().fg(Color::White)),
+        ]));
+        logo.push(Line::from(vec![
+            Span::styled("  c     ", Style::default().fg(dark_orange).add_modifier(Modifier::BOLD)),
+            Span::styled("Comment selected lines", Style::default().fg(Color::White)),
+        ]));
         logo.push(Line::from(""));
         logo.push(Line::from(vec![
             Span::styled("  q     ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
@@ -632,11 +860,81 @@ impl CodeViewer {
 
         frame.render_stateful_widget(list, layout[1], search_list_state);
     }
+
+    /// Renders the comment input modal for the current line selection.
+    fn render_comment_modal_static(
+        frame: &mut Frame,
+        area: Rect,
+        start: usize,
+        end: usize,
+        comment_input: &str,
+    ) {
+        let orange = Color::Rgb(0xff, 0x7a, 0x5c);
+        let dark_bg = Color::Rgb(0x1a, 0x1a, 0x2e);
+
+        let modal_width = (f32::from(area.width) * 0.7).min(70.0) as u16;
+        let modal_height = 7u16.min(area.height);
+
+        let modal_area = Rect {
+            x: area.x + (area.width.saturating_sub(modal_width)) / 2,
+            y: area.y + (area.height.saturating_sub(modal_height)) / 2,
+            width: modal_width,
+            height: modal_height,
+        };
+
+        frame.render_widget(Clear, modal_area);
+
+        let range_label = if start == end {
+            format!(" Comment on L{} ", start + 1)
+        } else {
+            format!(" Comment on L{}-L{} ", start + 1, end + 1)
+        };
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(orange))
+            .style(Style::default().bg(dark_bg))
+            .title(Line::from(vec![
+                Span::styled(" \u{f075} ", Style::default().fg(orange)),
+                Span::styled(
+                    range_label,
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                ),
+            ]))
+            .title_bottom(
+                Line::from(" Enter: save │ Esc: cancel ").style(Style::default().fg(Color::DarkGray)),
+            );
+
+        let inner = block.inner(modal_area);
+        frame.render_widget(block, modal_area);
+
+        let text = Line::from(vec![
+            Span::raw(comment_input),
+            Span::styled("▌", Style::default().fg(orange)),
+        ]);
+
+        let input = Paragraph::new(text)
+            .style(Style::default().fg(Color::White))
+            .wrap(ratatui::widgets::Wrap { trim: false });
+
+        frame.render_widget(input, inner);
+    }
 }
 
 impl Component for CodeViewer {
     fn handle_key_event(&mut self, key: KeyEvent) -> Action {
-        if self.search_mode {
+        if self.comment_mode {
+            match key.code {
+                KeyCode::Esc => self.cancel_comment(),
+                KeyCode::Enter => self.save_annotation(),
+                KeyCode::Backspace => {
+                    self.comment_input.pop();
+                }
+                KeyCode::Char(c) => self.comment_input.push(c),
+                _ => {}
+            }
+            Action::None
+        } else if self.search_mode {
             match key.code {
                 KeyCode::Esc | KeyCode::Enter => {
                     self.exit_search_mode();
@@ -700,6 +998,15 @@ impl Component for CodeViewer {
                     self.prev_match();
                     Action::None
                 }
+                KeyCode::Char('c') => {
+                    self.enter_comment_mode();
+                    Action::None
+                }
+                KeyCode::Esc => {
+                    self.clear_selection();
+                    self.status_message = None;
+                    Action::None
+                }
                 _ => Action::None,
             }
         }
@@ -735,14 +1042,29 @@ impl Component for CodeViewer {
             .border_style(border_style)
             .title(title);
 
+        let orange = Color::Rgb(0xff, 0x7a, 0x5c);
+        let selection = self.selected_range();
+
         if !self.search_mode && !self.search_query.is_empty() && !self.search_matches.is_empty() {
             let match_info = format!(" {}/{} matches ", self.current_match + 1, self.search_matches.len());
-            block = block.title_bottom(Line::from(match_info).style(Style::default().fg(Color::Rgb(0xff, 0x7a, 0x5c))));
+            block = block.title_bottom(Line::from(match_info).style(Style::default().fg(orange)));
+        } else if let Some((start, end)) = selection {
+            let count = end - start + 1;
+            let info = format!(" {} line(s) selected — c: comment ", count);
+            block = block.title_bottom(
+                Line::from(info)
+                    .style(Style::default().fg(orange).add_modifier(Modifier::BOLD)),
+            );
+        } else if let Some(msg) = &self.status_message {
+            block = block.title_bottom(Line::from(format!(" {} ", msg)).style(Style::default().fg(orange)));
         }
+
+        self.view_area = block.inner(area);
 
         let highlight_style = Style::default()
             .bg(Color::Rgb(0xe6, 0x5a, 0x3d))
             .fg(Color::Rgb(0x1a, 0x12, 0x0f));
+        let selection_style = Style::default().bg(Color::Rgb(0x3a, 0x4a, 0x6a));
 
         let visible_lines: Vec<Line> = self
             .highlighted_lines
@@ -755,6 +1077,8 @@ impl Component for CodeViewer {
                         line.to_string(),
                         highlight_style,
                     )])
+                } else if selection.is_some_and(|(s, e)| idx >= s && idx <= e) {
+                    line.clone().patch_style(selection_style)
                 } else {
                     line.clone()
                 }
@@ -774,6 +1098,12 @@ impl Component for CodeViewer {
                 &self.content,
                 &mut self.search_list_state,
             );
+        }
+
+        if self.comment_mode {
+            if let Some((start, end)) = selection {
+                Self::render_comment_modal_static(frame, area, start, end, &self.comment_input);
+            }
         }
     }
 }

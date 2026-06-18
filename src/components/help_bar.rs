@@ -15,6 +15,7 @@ pub struct HelpBar {
     search_mode: bool,
     in_code_viewer: bool,
     in_git_status: bool,
+    in_review: bool,
 }
 
 impl HelpBar {
@@ -24,6 +25,7 @@ impl HelpBar {
             search_mode: false,
             in_code_viewer: false,
             in_git_status: false,
+            in_review: false,
         }
     }
 
@@ -34,10 +36,18 @@ impl HelpBar {
     /// * `search_mode` - Whether any component is in search mode.
     /// * `in_code_viewer` - Whether the code viewer is focused with a file open.
     /// * `in_git_status` - Whether the git status panel is focused.
-    pub fn set_context(&mut self, search_mode: bool, in_code_viewer: bool, in_git_status: bool) {
+    /// * `in_review` - Whether the review panel is focused.
+    pub fn set_context(
+        &mut self,
+        search_mode: bool,
+        in_code_viewer: bool,
+        in_git_status: bool,
+        in_review: bool,
+    ) {
         self.search_mode = search_mode;
         self.in_code_viewer = in_code_viewer;
         self.in_git_status = in_git_status;
+        self.in_review = in_review;
     }
 
     /// Sets the search mode flag.
@@ -74,9 +84,20 @@ impl HelpBar {
         } else if self.in_code_viewer {
             vec![
                 ("j/k", "Scroll"),
+                ("drag", "Select"),
+                ("c", "Comment"),
                 ("/", "Search"),
-                ("n/N", "Next/Prev"),
                 ("g/G", "Top/Bottom"),
+                ("Tab", "Panel"),
+                ("q", "Quit"),
+            ]
+        } else if self.in_review {
+            vec![
+                ("j/k", "Navigate"),
+                ("Enter", "Open"),
+                ("w", "Worker"),
+                ("s", "Status"),
+                ("d", "Delete"),
                 ("Tab", "Panel"),
                 ("q", "Quit"),
             ]

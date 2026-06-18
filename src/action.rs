@@ -55,6 +55,17 @@ pub enum Action {
     /// * `PathBuf` - The absolute path to the file to diff.
     DiffSelected(PathBuf),
 
+    /// An annotation was opened from the review panel.
+    ///
+    /// Loads the annotated file in the code viewer and scrolls to the line,
+    /// keeping focus on the review panel.
+    AnnotationOpen {
+        /// Absolute path to the annotated file.
+        path: PathBuf,
+        /// 1-based line to scroll to.
+        line: usize,
+    },
+
     /// Toggle visibility of hidden files.
     ToggleHidden,
 

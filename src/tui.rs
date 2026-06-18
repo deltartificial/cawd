@@ -1,6 +1,7 @@
 //! Terminal User Interface initialization and cleanup utilities.
 
 use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -38,7 +39,7 @@ pub fn init() -> color_eyre::Result<Tui> {
     }));
 
     enable_raw_mode()?;
-    execute!(io::stdout(), EnterAlternateScreen)?;
+    execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(io::stdout());
     let terminal = Terminal::new(backend)?;
     Ok(terminal)
@@ -55,6 +56,6 @@ pub fn init() -> color_eyre::Result<Tui> {
 /// Returns `Ok(())` on success, or an error if restoration fails.
 pub fn restore() -> color_eyre::Result<()> {
     disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen)?;
+    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
     Ok(())
 }
