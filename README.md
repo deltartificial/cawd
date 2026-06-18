@@ -1,12 +1,12 @@
 # cawd
 
 ```
-   ██████╗ █████╗ ██╗    ██╗██████╗
-  ██╔════╝██╔══██╗██║    ██║██╔══██╗
-  ██║     ███████║██║ █╗ ██║██║  ██║
-  ██║     ██╔══██║██║███╗██║██║  ██║
-  ╚██████╗██║  ██║╚███╔███╔╝██████╔╝
-   ╚═════╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═════╝
+ ██████╗ █████╗ ██╗    ██╗██████╗
+██╔════╝██╔══██╗██║    ██║██╔══██╗
+██║     ███████║██║ █╗ ██║██║  ██║
+██║     ██╔══██║██║███╗██║██║  ██║
+╚██████╗██║  ██║╚███╔███╔╝██████╔╝
+ ╚═════╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═════╝
 ```
 
 Code Aware Workspace Display - Terminal file explorer with syntax highlighting.
@@ -35,17 +35,17 @@ cawd [path]
 
 ## Keybindings
 
-| Key | Action |
-|-----|--------|
-| j/k | Navigate |
-| h/l | Collapse/Expand |
-| Enter | Open file |
-| Ctrl+P | Search files |
-| / | Filter/Search |
+| Key        | Action                     |
+| ---------- | -------------------------- |
+| j/k        | Navigate                   |
+| h/l        | Collapse/Expand            |
+| Enter      | Open file                  |
+| Ctrl+P     | Search files               |
+| /          | Filter/Search              |
 | Mouse drag | Select lines (code viewer) |
-| c | Comment selected lines |
-| Tab | Switch panel |
-| q | Quit |
+| c          | Comment selected lines     |
+| Tab        | Switch panel               |
+| q          | Quit                       |
 
 ## Annotations & Review
 
@@ -61,20 +61,20 @@ see at a glance which lines a comment refers to while reading the file.
 
 The **Review** tab (cycle with `Tab`, or press `3`) lists every annotation with
 a status badge (○ open · ◐ in progress · ● resolved). Resolved annotations are
-hidden by default — the title shows how many are *done* and `a` reveals them:
+hidden by default — the title shows how many are _done_ and `a` reveals them:
 
-| Key | Action |
-|-----|--------|
-| j/k | Navigate annotations |
-| Enter | Open the annotated file at its lines |
-| w | Dispatch a worker on the annotation |
-| s | Cycle status (open → in progress → resolved) |
-| d | Delete the annotation |
+| Key   | Action                                       |
+| ----- | -------------------------------------------- |
+| j/k   | Navigate annotations                         |
+| Enter | Open the annotated file at its lines         |
+| w     | Dispatch a worker on the annotation          |
+| s     | Cycle status (open → in progress → resolved) |
+| d     | Delete the annotation                        |
 
 Pressing `w` launches a **headless Claude Code worker** (`claude -p … --dangerously-skip-permissions`)
 from the project root that picks up the task built from the comment, code excerpt
-and line range. The annotation moves to *in progress*; when the worker exits
-cleanly it is marked *resolved* automatically (otherwise it returns to *open*).
+and line range. The annotation moves to _in progress_; when the worker exits
+cleanly it is marked _resolved_ automatically (otherwise it returns to _open_).
 Worker output is streamed to `.cawd/logs/<id>.log`.
 
 > Note: workers edit files directly in the repository without confirmation. They
