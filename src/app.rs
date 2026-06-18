@@ -320,9 +320,16 @@ impl App {
                 };
 
                 self.handle_action(action)?;
+
+                // An input event was handled this tick. Skip the periodic
+                // maintenance below so navigation stays responsive — git
+                // refresh spawns a subprocess and must never run inline with
+                // a keypress.
+                return Ok(());
             }
         }
 
+        // Idle tick (no key/mouse event waiting): run periodic maintenance.
         if self.last_git_refresh.elapsed().as_secs() >= 2 {
             self.git_status.refresh();
             self.review.poll_workers();
