@@ -1,0 +1,22 @@
+[package]
+name = "cawd-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+# Add your workspace crates here for fuzzing
+# [dependencies.your-crate]
+# path = ".."
+
+[[bin]]
+name = "example_fuzz"
+path = "fuzz_targets/example_fuzz.rs"
+test = false
+doc = false
+bench = false
