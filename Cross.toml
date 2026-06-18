@@ -1,0 +1,42 @@
+# Cross-compilation configuration for cross-rs
+# Documentation: https://github.com/cross-rs/cross/wiki/Configuration
+
+[build]
+# Install LLVM/Clang for all targets (needed for bindgen and similar tools)
+# Also enforces HTTPS for apt sources and adds retry/timeout configuration
+pre-build = [
+  "apt-get update && apt-get install --assume-yes --no-install-recommends ca-certificates",
+  "find /etc/apt/ -type f \\( -name '*.list' -o -name '*.sources' \\) -exec sed -i 's|http://|https://|g' {} +",
+  "echo 'Acquire::Retries \"3\";' > /etc/apt/apt.conf.d/80-retries",
+  "echo 'Acquire::http::Timeout \"60\";' >> /etc/apt/apt.conf.d/80-retries",
+  "echo 'Acquire::ftp::Timeout \"60\";' >> /etc/apt/apt.conf.d/80-retries",
+  "apt-get update && apt-get install --assume-yes --no-install-recommends llvm-dev libclang-dev clang",
+]
+
+[target.aarch64-unknown-linux-gnu]
+# jemalloc page size configuration for ARM64
+env.passthrough = ["JEMALLOC_SYS_WITH_LG_PAGE"]
+
+[target.riscv64gc-unknown-linux-gnu]
+# Ubuntu 24.04 LTS base image with RISC-V cross-compiler
+image = "ubuntu:24.04"
+pre-build = [
+  "apt update",
+  "apt install --yes gcc gcc-riscv64-linux-gnu g++-riscv64-linux-gnu libclang-dev make",
+]
+# Linker and C++ compiler configuration for RISC-V
+env.passthrough = [
+  "CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER=riscv64-linux-gnu-gcc",
+  "CXX_riscv64gc_unknown_linux_gnu=riscv64-linux-gnu-g++",
+]
+
+[build.env]
+# Global environment variables passed through to all cross-compilation builds
+passthrough = [
+  "RUSTFLAGS", # Compiler flags (critical for custom builds)
+  "RUST_BACKTRACE", # Debugging support
+  "JEMALLOC_SYS_WITH_LG_PAGE",
+  "SCCACHE_DIR",
+  "SCCACHE_ERROR_LOG",
+  "SCCACHE_LOG",
+]
