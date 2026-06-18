@@ -1,21 +1,9 @@
-//! Code viewer component with syntax highlighting and search.
-
 use crate::{
     action::Action,
     annotation::{Annotation, AnnotationStatus},
     components::Component,
 };
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
-
-/// The display mode for the code viewer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum ViewMode {
-    /// Normal syntax-highlighted code view.
-    #[default]
-    Code,
-    /// Git diff view with additions/deletions highlighted.
-    Diff,
-}
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -28,6 +16,16 @@ use std::{
     process::Command,
 };
 use syntect::highlighting::FontStyle;
+
+/// The display mode for the code viewer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum ViewMode {
+    /// Normal syntax-highlighted code view.
+    #[default]
+    Code,
+    /// Git diff view with additions/deletions highlighted.
+    Diff,
+}
 
 /// Borrowed view of in-file search state passed to the search-modal renderer.
 #[derive(Debug)]
