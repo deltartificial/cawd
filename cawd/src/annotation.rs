@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 /// The lifecycle status of an annotation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AnnotationStatus {
+pub(crate) enum AnnotationStatus {
     /// Not yet picked up.
     #[default]
     Open,
@@ -29,7 +29,7 @@ impl AnnotationStatus {
     }
 
     /// Returns the serialized lowercase form.
-    fn as_str(self) -> &'static str {
+    const fn as_str(self) -> &'static str {
         match self {
             Self::Open => "open",
             Self::InProgress => "in_progress",
@@ -38,7 +38,7 @@ impl AnnotationStatus {
     }
 
     /// Returns the badge glyph shown in the list.
-    pub fn glyph(self) -> &'static str {
+    pub(crate) const fn glyph(self) -> &'static str {
         match self {
             Self::Open => "○",
             Self::InProgress => "◐",
@@ -46,8 +46,8 @@ impl AnnotationStatus {
         }
     }
 
-    /// Cycles to the next status (open → in_progress → resolved → open).
-    pub fn next(self) -> Self {
+    /// Cycles to the next status (open → `in_progress` → resolved → open).
+    pub(crate) const fn next(self) -> Self {
         match self {
             Self::Open => Self::InProgress,
             Self::InProgress => Self::Resolved,
@@ -58,7 +58,7 @@ impl AnnotationStatus {
 
 /// A single code review annotation.
 #[derive(Debug, Clone)]
-pub struct Annotation {
+pub(crate) struct Annotation {
     /// Stable identifier, equal to the file stem (a timestamp).
     pub id: String,
     /// Current lifecycle status.
@@ -83,24 +83,24 @@ pub struct Annotation {
 
 impl Annotation {
     /// Returns the directory where annotations live for a given project root.
-    pub fn dir(root: &Path) -> PathBuf {
+    pub(crate) fn dir(root: &Path) -> PathBuf {
         root.join(".cawd")
     }
 
     /// Returns the 1-based inclusive line range `(start, end)` this annotation
     /// covers, parsed from the `lines` label (e.g. `42-45` or a single `42`).
-    pub fn line_range(&self) -> (usize, usize) {
+    pub(crate) fn line_range(&self) -> (usize, usize) {
         let end = self
             .lines
             .rsplit('-')
             .next()
             .and_then(|s| s.trim().parse::<usize>().ok())
-            .unwrap_or(self.start_line);
+            .map_or(self.start_line, |it| it);
         (self.start_line, end.max(self.start_line))
     }
 
     /// Serializes the annotation back to its markdown representation.
-    pub fn to_markdown(&self) -> String {
+    pub(crate) fn to_markdown(&self) -> String {
         format!(
             "id: {}\nstatus: {}\nfile: {}\nlines: {}\ndate: {}\nworker: {}\n---\n{}\n---\ncomment:\n{}\n",
             self.id,
@@ -108,14 +108,14 @@ impl Annotation {
             self.file,
             self.lines,
             self.date,
-            self.worker_pid.map_or_else(|| "-".to_string(), |p| p.to_string()),
+            self.worker_pid.map_or_else(|| "-".to_owned(), |p| p.to_string()),
             self.excerpt,
             self.comment,
         )
     }
 
     /// Writes the annotation to its backing file.
-    pub fn save(&self) -> std::io::Result<()> {
+    pub(crate) fn save(&self) -> std::io::Result<()> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -123,7 +123,7 @@ impl Annotation {
     }
 
     /// Deletes the backing file.
-    pub fn delete(&self) -> std::io::Result<()> {
+    pub(crate) fn delete(&self) -> std::io::Result<()> {
         std::fs::remove_file(&self.path)
     }
 
@@ -140,37 +140,37 @@ impl Annotation {
 
         let mut sections = content.splitn(3, "\n---\n");
         let header = sections.next().unwrap_or_default();
-        let excerpt = sections.next().unwrap_or_default().to_string();
+        let excerpt = sections.next().unwrap_or_default().to_owned();
         let rest = sections.next().unwrap_or_default();
 
         for line in header.lines() {
-            let Some((key, value)) = line.split_once(':') else { continue };
-            let value = value.trim();
+            let Some((key, raw)) = line.split_once(':') else { continue };
+            let value = raw.trim();
             match key.trim() {
-                "id" => id = Some(value.to_string()),
+                "id" => id = Some(value.to_owned()),
                 "status" => status = AnnotationStatus::from_str(value),
-                "file" => file = Some(value.to_string()),
-                "lines" => lines = Some(value.to_string()),
-                "date" => date = value.to_string(),
+                "file" => file = Some(value.to_owned()),
+                "lines" => lines = Some(value.to_owned()),
+                "date" => date = value.to_owned(),
                 "worker" => worker_pid = value.parse::<u32>().ok(),
                 _ => {}
             }
         }
 
-        let lines = lines?;
-        let start_line = lines
+        let lines_label = lines?;
+        let start_line = lines_label
             .split('-')
             .next()
             .and_then(|s| s.trim().parse::<usize>().ok())
-            .unwrap_or(1);
+            .map_or(1, |it| it);
 
         // The comment follows a leading `comment:` marker line.
         let comment = rest
             .strip_prefix("comment:\n")
             .or_else(|| rest.strip_prefix("comment:"))
-            .unwrap_or(rest)
+            .map_or(rest, |it| it)
             .trim_matches('\n')
-            .to_string();
+            .to_owned();
 
         let fallback_id = path.file_stem().map(|s| s.to_string_lossy().into_owned());
 
@@ -178,11 +178,11 @@ impl Annotation {
             id: id.or(fallback_id)?,
             status,
             file: file?,
-            lines,
+            lines: lines_label,
             start_line,
             date,
             worker_pid,
-            excerpt: excerpt.trim_matches('\n').to_string(),
+            excerpt: excerpt.trim_matches('\n').to_owned(),
             comment,
             path,
         })
@@ -191,7 +191,7 @@ impl Annotation {
     /// Loads all annotations from the `.cawd/` directory under `root`.
     ///
     /// Results are sorted by status (open first) then by id.
-    pub fn load_all(root: &Path) -> Vec<Self> {
+    pub(crate) fn load_all(root: &Path) -> Vec<Self> {
         let dir = Self::dir(root);
         let mut annotations = Vec::new();
 
@@ -204,10 +204,10 @@ impl Annotation {
             if path.extension().and_then(|e| e.to_str()) != Some("md") {
                 continue;
             }
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Some(annotation) = Self::parse(path, &content) {
-                    annotations.push(annotation);
-                }
+            if let Ok(content) = std::fs::read_to_string(&path) &&
+                let Some(annotation) = Self::parse(path, &content)
+            {
+                annotations.push(annotation);
             }
         }
 
@@ -217,9 +217,7 @@ impl Annotation {
                 AnnotationStatus::InProgress => 1,
                 AnnotationStatus::Resolved => 2,
             };
-            order(a.status)
-                .cmp(&order(b.status))
-                .then_with(|| a.id.cmp(&b.id))
+            order(a.status).cmp(&order(b.status)).then_with(|| a.id.cmp(&b.id))
         });
 
         annotations
@@ -232,15 +230,15 @@ mod tests {
 
     fn sample() -> Annotation {
         Annotation {
-            id: "2026-06-18T14-30-00".to_string(),
+            id: "2026-06-18T14-30-00".to_owned(),
             status: AnnotationStatus::InProgress,
-            file: "src/app.rs".to_string(),
-            lines: "42-45".to_string(),
+            file: "src/app.rs".to_owned(),
+            lines: "42-45".to_owned(),
             start_line: 42,
-            date: "2026-06-18 14:30:00".to_string(),
+            date: "2026-06-18 14:30:00".to_owned(),
             worker_pid: Some(12345),
-            excerpt: "  42 | let foo = bar();\n  43 | let baz = qux();".to_string(),
-            comment: "needs a refactor\nsecond line".to_string(),
+            excerpt: "  42 | let foo = bar();\n  43 | let baz = qux();".to_owned(),
+            comment: "needs a refactor\nsecond line".to_owned(),
             path: PathBuf::from("/tmp/.cawd/2026-06-18T14-30-00.md"),
         }
     }
@@ -268,7 +266,7 @@ mod tests {
         annotation.worker_pid = None;
         let markdown = annotation.to_markdown();
         assert!(markdown.contains("worker: -"));
-        let parsed = Annotation::parse(annotation.path.clone(), &markdown).expect("parse");
+        let parsed = Annotation::parse(annotation.path, &markdown).expect("parse");
         assert_eq!(parsed.worker_pid, None);
     }
 
