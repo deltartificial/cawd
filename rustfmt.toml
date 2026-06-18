@@ -1,0 +1,19 @@
+style_edition = "2024"
+
+imports_granularity = "Crate"
+reorder_imports = true
+reorder_modules = true
+use_small_heuristics = "Max"
+use_field_init_shorthand = true
+
+max_width = 100
+comment_width = 100
+
+wrap_comments = true
+format_code_in_doc_comments = true
+doc_comment_code_block_width = 100
+format_macro_matchers = true
+
+binop_separator = "Back"
+trailing_comma = "Vertical"
+trailing_semicolon = false

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dprint/dprint/refs/heads/main/website/src/assets/schemas/v0.json",
+  "lineWidth": 100,
+  "indentWidth": 2,
+  "useTabs": false,
+  "excludes": [
+    "**/target",
+    "**/node_modules",
+    "testdata/**",
+    "test-data/**",
+    "bench_data/**",
+    "**/tests/**",
+    "Cargo.lock"
+  ],
+  "plugins": [
+    "https://plugins.dprint.dev/toml-0.7.0.wasm",
+    "https://plugins.dprint.dev/json-0.21.0.wasm",
+    "https://plugins.dprint.dev/markdown-0.20.0.wasm",
+    "https://plugins.dprint.dev/dockerfile-0.3.3.wasm",
+    "https://plugins.dprint.dev/g-plane/pretty_yaml-v0.5.1.wasm"
+  ],
+  "toml": {
+    "lineWidth": 100,
+    "useTabs": false,
+    "cargo.applyConventions": false
+  },
+  "markdown": {
+    "lineWidth": 100,
+    "textWrap": "maintain"
+  },
+  "json": {
+    "lineWidth": 100,
+    "indentWidth": 2,
+    "useTabs": false,
+    "trailingCommas": "never",
+    "preferSingleLine": false
+  }
+}
