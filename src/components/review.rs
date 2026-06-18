@@ -425,26 +425,37 @@ impl Review {
             format!(" \u{f075} Review ({}) ", self.visible_indices.len())
         };
 
-        let mut block = Block::default()
+        let block = Block::default()
             .borders(Borders::ALL)
             .border_style(border_style)
             .title(title);
 
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        // Reserve the last inner row for an always-present hint line, drawn
+        // inside the panel just above the bottom border.
+        let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
+        let list_area = rows[0];
+        let hint_area = rows[1];
+
         let hidden = self.hidden_count();
-        if let Some(message) = &self.message {
-            block = block
-                .title_bottom(Line::from(format!(" {} ", message)).style(Style::default().fg(orange)));
-        } else if hidden > 0 {
-            block = block.title_bottom(
-                Line::from(format!(" press 'a' to show {} done ", hidden))
-                    .style(Style::default().fg(orange)),
-            );
-        } else if self.show_resolved {
-            block = block.title_bottom(
-                Line::from(" press 'a' to hide done ")
-                    .style(Style::default().fg(Color::DarkGray)),
-            );
-        }
+        let hint_line = if let Some(message) = &self.message {
+            Line::from(format!(" {} ", message)).style(Style::default().fg(orange))
+        } else {
+            let label = if self.show_resolved {
+                "hide done".to_string()
+            } else if hidden > 0 {
+                format!("show {} done", hidden)
+            } else {
+                "show done".to_string()
+            };
+            Line::from(vec![
+                Span::styled(" a ", Style::default().fg(Color::Gray).add_modifier(Modifier::BOLD)),
+                Span::styled(label, Style::default().fg(Color::DarkGray)),
+            ])
+        };
+        frame.render_widget(Paragraph::new(hint_line), hint_area);
 
         if self.visible_indices.is_empty() {
             let text = if self.annotations.is_empty() {
@@ -452,10 +463,8 @@ impl Review {
             } else {
                 " All resolved — press 'a' to show "
             };
-            let paragraph = Paragraph::new(text)
-                .block(block)
-                .style(Style::default().fg(Color::DarkGray));
-            frame.render_widget(paragraph, area);
+            let paragraph = Paragraph::new(text).style(Style::default().fg(Color::DarkGray));
+            frame.render_widget(paragraph, list_area);
             return;
         }
 
@@ -498,9 +507,9 @@ impl Review {
             .fg(Color::Rgb(0x1a, 0x12, 0x0f))
             .add_modifier(Modifier::BOLD);
 
-        let list = List::new(items).block(block).highlight_style(highlight_style);
+        let list = List::new(items).highlight_style(highlight_style);
 
-        frame.render_stateful_widget(list, area, &mut self.list_state);
+        frame.render_stateful_widget(list, list_area, &mut self.list_state);
     }
 
     /// Renders the workers list (bottom section of the review panel).
