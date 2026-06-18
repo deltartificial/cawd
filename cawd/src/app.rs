@@ -1,24 +1,29 @@
 //! Main application state and event loop.
 
-use crate::action::Action;
-use crate::components::code_viewer::CodeViewer;
-use crate::components::file_tree::FileTree;
-use crate::components::git_status::GitStatus;
-use crate::components::help_bar::HelpBar;
-use crate::components::review::Review;
-use crate::components::search_modal::SearchModal;
-use crate::components::Component;
-use crate::tui::Tui;
+use crate::{
+    action::Action,
+    components::{
+        Component,
+        code_viewer::CodeViewer,
+        file_tree::FileTree,
+        git_status::GitStatus,
+        help_bar::{HelpBar, HelpContext},
+        review::Review,
+        search_modal::SearchModal,
+    },
+    tui::Tui,
+};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use std::path::PathBuf;
-use std::time::Instant;
+use ratatui::{
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+};
+use std::{path::PathBuf, time::Instant};
 
 /// The currently active panel in the UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Panel {
+pub(crate) enum Panel {
     /// File tree explorer panel.
     FileTree,
     /// Git status panel showing changed files.
@@ -33,7 +38,7 @@ pub enum Panel {
 ///
 /// Manages all UI components, handles event routing, and maintains
 /// the overall application state including which panel is focused.
-pub struct App {
+pub(crate) struct App {
     file_tree: FileTree,
     git_status: GitStatus,
     review: Review,
@@ -42,7 +47,6 @@ pub struct App {
     search_modal: SearchModal,
     active_panel: Panel,
     should_quit: bool,
-    root: PathBuf,
     last_git_refresh: Instant,
 }
 
@@ -56,23 +60,22 @@ impl App {
     /// # Returns
     ///
     /// Returns a configured `App` instance, or an error if initialization fails.
-    pub fn new(path: PathBuf) -> color_eyre::Result<Self> {
+    pub(crate) fn new(path: PathBuf) -> color_eyre::Result<Self> {
         let root = if path.is_file() {
-            path.parent().unwrap_or(&path).to_path_buf()
+            path.parent().map_or(path.as_path(), |it| it).to_path_buf()
         } else {
             path.clone()
         };
 
         Ok(Self {
-            file_tree: FileTree::new(path.clone())?,
+            file_tree: FileTree::new(path)?,
             git_status: GitStatus::new(root.clone()),
             review: Review::new(root.clone()),
             code_viewer: CodeViewer::new(root.clone()),
             help_bar: HelpBar::new(),
-            search_modal: SearchModal::new(root.clone()),
+            search_modal: SearchModal::new(root),
             active_panel: Panel::FileTree,
             should_quit: false,
-            root,
             last_git_refresh: Instant::now(),
         })
     }
@@ -88,7 +91,7 @@ impl App {
     /// # Returns
     ///
     /// Returns `Ok(())` on normal exit, or an error if rendering/events fail.
-    pub fn run(&mut self, terminal: &mut Tui) -> color_eyre::Result<()> {
+    pub(crate) fn run(&mut self, terminal: &mut Tui) -> color_eyre::Result<()> {
         while !self.should_quit {
             terminal.draw(|frame| self.render(frame))?;
             self.handle_events()?;
@@ -104,14 +107,10 @@ impl App {
     ///   - Left: File tree (75%) and Git status (25%)
     ///   - Right: Code viewer
     /// - Bottom: Help bar (1 line)
-    fn render(&mut self, frame: &mut ratatui::Frame) {
+    fn render(&mut self, frame: &mut ratatui::Frame<'_>) {
         let main_layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1),
-                Constraint::Min(1),
-                Constraint::Length(1),
-            ])
+            .constraints([Constraint::Length(1), Constraint::Min(1), Constraint::Length(1)])
             .split(frame.area());
 
         let tabs_area = main_layout[0];
@@ -120,38 +119,32 @@ impl App {
 
         self.render_tabs(frame, tabs_area);
 
-        let content_layout = Layout::horizontal([
-            Constraint::Percentage(30),
-            Constraint::Percentage(70),
-        ])
-        .split(content_area);
+        let content_layout =
+            Layout::horizontal([Constraint::Percentage(30), Constraint::Percentage(70)])
+                .split(content_area);
 
         if self.active_panel == Panel::Review {
             self.review.render(frame, content_layout[0], true);
         } else {
-            let left_layout = Layout::vertical([
-                Constraint::Percentage(75),
-                Constraint::Percentage(25),
-            ])
-            .split(content_layout[0]);
+            let left_layout =
+                Layout::vertical([Constraint::Percentage(75), Constraint::Percentage(25)])
+                    .split(content_layout[0]);
 
-            self.file_tree
-                .render(frame, left_layout[0], self.active_panel == Panel::FileTree);
-            self.git_status
-                .render(frame, left_layout[1], self.active_panel == Panel::GitStatus);
+            self.file_tree.render(frame, left_layout[0], self.active_panel == Panel::FileTree);
+            self.git_status.render(frame, left_layout[1], self.active_panel == Panel::GitStatus);
         }
 
-        self.code_viewer
-            .render(frame, content_layout[1], self.active_panel == Panel::CodeViewer);
+        self.code_viewer.render(frame, content_layout[1], self.active_panel == Panel::CodeViewer);
 
-        let search_mode = self.file_tree.is_search_mode()
-            || self.git_status.is_search_mode()
-            || self.code_viewer.is_search_mode();
-        let in_code_viewer = self.active_panel == Panel::CodeViewer && self.code_viewer.has_file();
-        let in_git_status = self.active_panel == Panel::GitStatus;
-        let in_review = self.active_panel == Panel::Review;
-        self.help_bar
-            .set_context(search_mode, in_code_viewer, in_git_status, in_review);
+        let search_mode = self.file_tree.is_search_mode() ||
+            self.git_status.is_search_mode() ||
+            self.code_viewer.is_search_mode();
+        self.help_bar.set_context(HelpContext {
+            search_mode,
+            in_code_viewer: self.active_panel == Panel::CodeViewer && self.code_viewer.has_file(),
+            in_git_status: self.active_panel == Panel::GitStatus,
+            in_review: self.active_panel == Panel::Review,
+        });
         self.help_bar.render(frame, help_area);
 
         self.search_modal.render(frame);
@@ -160,7 +153,7 @@ impl App {
     /// Renders the tab bar showing panel names.
     ///
     /// Active panel is highlighted with orange background.
-    fn render_tabs(&self, frame: &mut ratatui::Frame, area: Rect) {
+    fn render_tabs(&self, frame: &mut ratatui::Frame<'_>, area: Rect) {
         let orange = Color::Rgb(0xff, 0x7a, 0x5c);
         let dark_text = Color::Rgb(0x1a, 0x12, 0x0f);
 
@@ -188,7 +181,7 @@ impl App {
             Style::default().fg(Color::DarkGray)
         };
 
-        let file_name = self.code_viewer.file_name().unwrap_or("Code");
+        let file_name = self.code_viewer.file_name().map_or("Code", |it| it);
 
         let tabs_line = Line::from(vec![
             Span::styled(" 1 \u{f07b} Explorer ", explorer_style),
@@ -197,7 +190,7 @@ impl App {
             Span::raw(" "),
             Span::styled(" 3 \u{f075} Review ", review_style),
             Span::raw(" "),
-            Span::styled(format!(" 4 \u{f15b} {} ", file_name), code_style),
+            Span::styled(format!(" 4 \u{f15b} {file_name} "), code_style),
             Span::raw("  "),
             Span::styled("Ctrl+P: Search", Style::default().fg(Color::DarkGray)),
         ]);
@@ -238,13 +231,13 @@ impl App {
                 }
 
                 if self.search_modal.active {
-                    if let Some(path) = self.search_modal.handle_key(key) {
-                        if path.is_file() {
-                            if let Err(e) = self.code_viewer.load_file(path) {
-                                self.code_viewer.show_error(&e.to_string());
-                            }
-                            self.active_panel = Panel::CodeViewer;
+                    if let Some(path) = self.search_modal.handle_key(key) &&
+                        path.is_file()
+                    {
+                        if let Err(e) = self.code_viewer.load_file(path) {
+                            self.code_viewer.show_error(&e.to_string());
                         }
+                        self.active_panel = Panel::CodeViewer;
                     }
                     return Ok(());
                 }
@@ -278,9 +271,9 @@ impl App {
                     return Ok(());
                 }
 
-                if key.code == KeyCode::Char('q')
-                    || (key.modifiers.contains(KeyModifiers::CONTROL)
-                        && key.code == KeyCode::Char('c'))
+                if key.code == KeyCode::Char('q') ||
+                    (key.modifiers.contains(KeyModifiers::CONTROL) &&
+                        key.code == KeyCode::Char('c'))
                 {
                     self.should_quit = true;
                     return Ok(());
@@ -364,7 +357,6 @@ impl App {
     /// * `action` - The action to process.
     fn handle_action(&mut self, action: Action) -> color_eyre::Result<()> {
         match action {
-            Action::Quit => self.should_quit = true,
             Action::FileSelected(path) => {
                 if let Err(e) = self.code_viewer.load_file(path) {
                     self.code_viewer.show_error(&e.to_string());
@@ -386,7 +378,10 @@ impl App {
                     self.code_viewer.scroll_to_line(line);
                 }
             }
-            _ => {}
+            Action::ToggleHidden |
+            Action::EnterSearchMode |
+            Action::ExitSearchMode |
+            Action::None => {}
         }
         Ok(())
     }
