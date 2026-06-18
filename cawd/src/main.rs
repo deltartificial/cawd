@@ -39,11 +39,8 @@ fn main() -> color_eyre::Result<()> {
 
     let args = Args::parse();
 
-    let path = if args.path.is_absolute() {
-        args.path
-    } else {
-        std::env::current_dir()?.join(&args.path)
-    };
+    let path =
+        if args.path.is_absolute() { args.path } else { std::env::current_dir()?.join(&args.path) };
 
     let mut terminal = tui::init()?;
     let result = App::new(path)?.run(&mut terminal);

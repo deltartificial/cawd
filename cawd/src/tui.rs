@@ -2,15 +2,16 @@
 
 use crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::backend::CrosstermBackend;
-use ratatui::Terminal;
-use std::io::{self, Stdout, Write};
-use std::panic;
+use ratatui::{Terminal, backend::CrosstermBackend};
+use std::{
+    io::{self, Stdout, Write},
+    panic,
+};
 
 /// Type alias for the terminal with crossterm backend.
-pub type Tui = Terminal<CrosstermBackend<Stdout>>;
+pub(crate) type Tui = Terminal<CrosstermBackend<Stdout>>;
 
 /// Enables mouse reporting for button press/release (1000), button-drag motion
 /// (1002), and SGR extended coordinates (1006).
@@ -36,16 +37,16 @@ const DISABLE_MOUSE: &str = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```text
 /// let mut terminal = tui::init()?;
 /// // Use terminal for rendering...
 /// tui::restore()?;
 /// ```
-pub fn init() -> color_eyre::Result<Tui> {
+pub(crate) fn init() -> color_eyre::Result<Tui> {
     // Set up panic hook to restore terminal on panic
     let original_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
-        let _ = restore();
+        _ = restore();
         original_hook(panic_info);
     }));
 
@@ -68,7 +69,7 @@ pub fn init() -> color_eyre::Result<Tui> {
 /// # Returns
 ///
 /// Returns `Ok(())` on success, or an error if restoration fails.
-pub fn restore() -> color_eyre::Result<()> {
+pub(crate) fn restore() -> color_eyre::Result<()> {
     let mut stdout = io::stdout();
     stdout.write_all(DISABLE_MOUSE.as_bytes())?;
     stdout.flush()?;
