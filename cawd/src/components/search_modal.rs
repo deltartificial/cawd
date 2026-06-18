@@ -2,18 +2,22 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 use devicons::FileIcon;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
-use ratatui::Frame;
-use std::collections::HashSet;
-use std::fs;
-use std::path::{Path, PathBuf};
+use ratatui::{
+    Frame,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+};
+use std::{
+    collections::BTreeSet,
+    fs,
+    path::{Path, PathBuf},
+};
 
 /// The type of search to perform.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SearchType {
+pub(crate) enum SearchType {
     /// Search for files by name.
     Files,
     /// Search for content within files (grep-like).
@@ -22,7 +26,7 @@ pub enum SearchType {
 
 /// Represents a search result with display information.
 #[derive(Debug, Clone)]
-pub struct SearchResult {
+pub(crate) struct SearchResult {
     /// Absolute path to the file.
     pub path: PathBuf,
     /// Display name (filename only).
@@ -44,45 +48,37 @@ impl SearchResult {
     ///
     /// * `path` - The absolute path to the file.
     /// * `root` - The root directory for computing relative paths.
-    pub fn new(path: PathBuf, root: &PathBuf) -> Self {
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
+    pub(crate) fn new(path: PathBuf, root: &PathBuf) -> Self {
+        let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
 
         let is_dir = path.is_dir();
 
         let (icon, color) = if is_dir {
-            ("\u{f07b}".to_string(), Color::Rgb(0xff, 0x7a, 0x5c))
+            ("\u{f07b}".to_owned(), Color::Rgb(0xff, 0x7a, 0x5c))
         } else {
             let file_icon = FileIcon::from(&name);
             (file_icon.icon.to_string(), Self::devicon_color_to_ratatui(file_icon.color))
         };
 
-        let relative_path = path
-            .strip_prefix(root)
-            .map_or_else(|_| path.to_string_lossy().to_string(), |p| p.to_string_lossy().to_string());
+        let relative_path = path.strip_prefix(root).map_or_else(
+            |_| path.to_string_lossy().to_string(),
+            |p| p.to_string_lossy().to_string(),
+        );
 
-        Self {
-            path,
-            name,
-            is_dir,
-            icon,
-            color,
-            relative_path,
-        }
+        Self { path, name, is_dir, icon, color, relative_path }
     }
 
     /// Converts a hex color string to a ratatui Color.
     fn devicon_color_to_ratatui(hex: &str) -> Color {
-        if hex.starts_with('#') && hex.len() == 7 {
-            if let (Ok(r), Ok(g), Ok(b)) = (
+        if hex.starts_with('#') &&
+            hex.len() == 7 &&
+            let (Ok(r), Ok(g), Ok(b)) = (
                 u8::from_str_radix(&hex[1..3], 16),
                 u8::from_str_radix(&hex[3..5], 16),
                 u8::from_str_radix(&hex[5..7], 16),
-            ) {
-                return Color::Rgb(r, g, b);
-            }
+            )
+        {
+            return Color::Rgb(r, g, b);
         }
         Color::White
     }
@@ -92,7 +88,7 @@ impl SearchResult {
 ///
 /// Provides a fuzzy file finder that indexes the project directory
 /// and allows quick navigation to any file.
-pub struct SearchModal {
+pub(crate) struct SearchModal {
     /// Whether the modal is currently visible.
     pub active: bool,
     /// The current search query.
@@ -113,7 +109,7 @@ impl SearchModal {
     /// # Parameters
     ///
     /// * `root` - The root directory to index for searching.
-    pub fn new(root: PathBuf) -> Self {
+    pub(crate) fn new(root: PathBuf) -> Self {
         let mut modal = Self {
             active: false,
             query: String::new(),
@@ -130,11 +126,11 @@ impl SearchModal {
     /// Indexes all files in the directory tree.
     fn index_files(&mut self, root: &Path) {
         self.all_files.clear();
-        self.index_recursive(root, &mut HashSet::new());
+        self.index_recursive(root, &mut BTreeSet::new());
     }
 
     /// Recursively indexes files, avoiding cycles and ignored directories.
-    fn index_recursive(&mut self, dir: &Path, visited: &mut HashSet<PathBuf>) {
+    fn index_recursive(&mut self, dir: &Path, visited: &mut BTreeSet<PathBuf>) {
         if let Ok(canonical) = dir.canonicalize() {
             if visited.contains(&canonical) {
                 return;
@@ -145,17 +141,15 @@ impl SearchModal {
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default();
+                let name =
+                    path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
 
-                if name.starts_with('.')
-                    || name == "node_modules"
-                    || name == "target"
-                    || name == "__pycache__"
-                    || name == "dist"
-                    || name == "build"
+                if name.starts_with('.') ||
+                    name == "node_modules" ||
+                    name == "target" ||
+                    name == "__pycache__" ||
+                    name == "dist" ||
+                    name == "build"
                 {
                     continue;
                 }
@@ -170,7 +164,7 @@ impl SearchModal {
     }
 
     /// Opens the search modal.
-    pub fn open(&mut self) {
+    pub(crate) fn open(&mut self) {
         self.active = true;
         self.query.clear();
         self.results.clear();
@@ -179,7 +173,7 @@ impl SearchModal {
     }
 
     /// Closes the search modal.
-    pub fn close(&mut self) {
+    pub(crate) fn close(&mut self) {
         self.active = false;
         self.query.clear();
         self.results.clear();
@@ -194,19 +188,23 @@ impl SearchModal {
     /// # Returns
     ///
     /// Returns `Some(PathBuf)` if a file was selected, `None` otherwise.
-    pub fn handle_key(&mut self, key: KeyEvent) -> Option<PathBuf> {
+    #[allow(
+        clippy::wildcard_enum_match_arm,
+        reason = "crossterm KeyCode/MouseEventKind are non_exhaustive, a catch-all arm is required"
+    )]
+    pub(crate) fn handle_key(&mut self, key: KeyEvent) -> Option<PathBuf> {
         match key.code {
             KeyCode::Esc => {
                 self.close();
                 None
             }
             KeyCode::Enter => {
-                if let Some(selected) = self.list_state.selected() {
-                    if let Some(result) = self.results.get(selected) {
-                        let path = result.path.clone();
-                        self.close();
-                        return Some(path);
-                    }
+                if let Some(selected) = self.list_state.selected() &&
+                    let Some(result) = self.results.get(selected)
+                {
+                    let path = result.path.clone();
+                    self.close();
+                    return Some(path);
                 }
                 None
             }
@@ -245,12 +243,8 @@ impl SearchModal {
         if self.results.is_empty() {
             return;
         }
-        let current = self.list_state.selected().unwrap_or(0);
-        let new_idx = if current == 0 {
-            self.results.len().saturating_sub(1)
-        } else {
-            current - 1
-        };
+        let current = self.list_state.selected().unwrap_or_default();
+        let new_idx = if current == 0 { self.results.len().saturating_sub(1) } else { current - 1 };
         self.list_state.select(Some(new_idx));
     }
 
@@ -259,12 +253,8 @@ impl SearchModal {
         if self.results.is_empty() {
             return;
         }
-        let current = self.list_state.selected().unwrap_or(0);
-        let new_idx = if current >= self.results.len().saturating_sub(1) {
-            0
-        } else {
-            current + 1
-        };
+        let current = self.list_state.selected().unwrap_or_default();
+        let new_idx = if current >= self.results.len().saturating_sub(1) { 0 } else { current + 1 };
         self.list_state.select(Some(new_idx));
     }
 
@@ -290,21 +280,13 @@ impl SearchModal {
                         .unwrap_or_default();
 
                     let score = Self::fuzzy_score(&name, &query_chars);
-                    if score > 0 {
-                        Some((SearchResult::new(path.clone(), &self.root), score))
-                    } else {
-                        None
-                    }
+                    (score > 0).then(|| (SearchResult::new(path.clone(), &self.root), score))
                 })
                 .collect();
 
-            scored_results.sort_by(|a, b| b.1.cmp(&a.1));
+            scored_results.sort_by_key(|r| core::cmp::Reverse(r.1));
 
-            self.results = scored_results
-                .into_iter()
-                .take(20)
-                .map(|(r, _)| r)
-                .collect();
+            self.results = scored_results.into_iter().take(20).map(|(r, _)| r).collect();
         }
 
         if self.results.is_empty() {
@@ -331,13 +313,15 @@ impl SearchModal {
             if query_idx < query.len() && c == query[query_idx] {
                 score += 10;
 
-                if let Some(prev) = prev_match_idx {
-                    if i == prev + 1 {
-                        score += 15;
-                    }
+                if let Some(prev) = prev_match_idx &&
+                    i == prev + 1
+                {
+                    score += 15;
                 }
 
-                if i == 0 || text_chars.get(i - 1).is_some_and(|&c| c == '_' || c == '-' || c == '.') {
+                if i == 0 ||
+                    text_chars.get(i - 1).is_some_and(|&c| c == '_' || c == '-' || c == '.')
+                {
                     score += 10;
                 }
 
@@ -346,11 +330,7 @@ impl SearchModal {
             }
         }
 
-        if query_idx == query.len() {
-            score
-        } else {
-            0
-        }
+        if query_idx == query.len() { score } else { 0 }
     }
 
     /// Renders the search modal to the terminal frame.
@@ -358,7 +338,7 @@ impl SearchModal {
     /// # Parameters
     ///
     /// * `frame` - The terminal frame to render to.
-    pub fn render(&mut self, frame: &mut Frame) {
+    pub(crate) fn render(&mut self, frame: &mut Frame<'_>) {
         if !self.active {
             return;
         }
@@ -387,7 +367,10 @@ impl SearchModal {
             .style(Style::default().bg(dark_bg))
             .title(Line::from(vec![
                 Span::styled(" \u{f002} ", Style::default().fg(orange)),
-                Span::styled("Find Files", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Find Files",
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(" "),
             ]));
 
@@ -396,11 +379,7 @@ impl SearchModal {
 
         let layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Length(1),
-                Constraint::Min(1),
-            ])
+            .constraints([Constraint::Length(3), Constraint::Length(1), Constraint::Min(1)])
             .split(inner);
 
         let input_block = Block::default()
@@ -415,9 +394,8 @@ impl SearchModal {
             Span::styled(cursor, Style::default().fg(orange)),
         ]);
 
-        let input = Paragraph::new(input_text)
-            .block(input_block)
-            .style(Style::default().fg(Color::White));
+        let input =
+            Paragraph::new(input_text).block(input_block).style(Style::default().fg(Color::White));
 
         frame.render_widget(input, layout[0]);
 
@@ -443,10 +421,9 @@ impl SearchModal {
         let tabs_widget = Paragraph::new(tabs).style(Style::default().bg(dark_bg));
         frame.render_widget(tabs_widget, layout[1]);
 
-        let results_block = Block::default()
-            .style(Style::default().bg(dark_bg));
+        let results_block = Block::default().style(Style::default().bg(dark_bg));
 
-        let items: Vec<ListItem> = self
+        let items: Vec<ListItem<'_>> = self
             .results
             .iter()
             .map(|result| {
