@@ -97,6 +97,7 @@ impl HelpBar {
                 ("Enter", "Open"),
                 ("w", "Worker"),
                 ("s", "Status"),
+                ("a", "Show all"),
                 ("d", "Delete"),
                 ("Tab", "Panel"),
                 ("q", "Quit"),
