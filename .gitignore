@@ -1,1 +1,73 @@
-/target
+# Build artifacts
+/target/
+target/
+dist/
+
+# Cargo
+**/*.rs.bk
+Cargo.lock.bak
+
+# Debug
+*.pdb
+rustc-ice-*
+
+# OS
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+.zed/
+*.swp
+*.swo
+*~
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+.envrc
+.direnv/
+**/.env
+**/.envrc
+
+# AI assistants
+.claude/
+CLAUDE.local.md
+
+# Node (si applicable)
+node_modules/
+*.tgz
+
+# Python (si applicable)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Docker
+recipe.json
+
+# Coverage
+lcov.info
+
+# Profiling
+profile.json.gz
+*.profraw
+
+# Proptest regressions
+proptest-regressions/
+
+# Test data
+testdata/
+test-data/
+
+# Worktrees
+.worktrees/
+
+# Misc
+_
+*.zip
+*.tar.gz
+paradigm-config-analysis.md
