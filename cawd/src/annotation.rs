@@ -90,12 +90,11 @@ impl Annotation {
     /// Returns the 1-based inclusive line range `(start, end)` this annotation
     /// covers, parsed from the `lines` label (e.g. `42-45` or a single `42`).
     pub(crate) fn line_range(&self) -> (usize, usize) {
-        let end = self
-            .lines
-            .rsplit('-')
-            .next()
-            .and_then(|s| s.trim().parse::<usize>().ok())
-            .map_or(self.start_line, |it| it);
+        let parsed_end = self.lines.rsplit('-').next().and_then(|s| s.trim().parse::<usize>().ok());
+        let end = match parsed_end {
+            Some(value) => value,
+            None => self.start_line,
+        };
         (self.start_line, end.max(self.start_line))
     }
 
@@ -158,11 +157,12 @@ impl Annotation {
         }
 
         let lines_label = lines?;
-        let start_line = lines_label
-            .split('-')
-            .next()
-            .and_then(|s| s.trim().parse::<usize>().ok())
-            .map_or(1, |it| it);
+        let parsed_start =
+            lines_label.split('-').next().and_then(|s| s.trim().parse::<usize>().ok());
+        let start_line = match parsed_start {
+            Some(value) => value,
+            None => 1,
+        };
 
         // The comment follows a leading `comment:` marker line.
         let comment = rest
