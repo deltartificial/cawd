@@ -16,7 +16,14 @@ color-eyre = "0.6"
 crossterm = { version = "0.29", features = ["event-stream"] }
 devicons = "0.6"
 ratatui = "0.30"
+# Notion REST client. rustls (ring provider) + bundled webpki roots only — no
+# native-tls/openssl (cargo-deny bans openssl) and no aws-lc (its C/asm build
+# breaks the riscv64/aarch64 cross builds).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
+serde_json = "1"
 syntect = "5.3"
+# Single-threaded runtime that drives reqwest on the Notion worker thread.
+tokio = { version = "1", default-features = false, features = ["rt", "net", "time"] }
 two-face = "0.5.1"
 
 [lints]

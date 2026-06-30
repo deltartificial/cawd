@@ -15,7 +15,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     time::Instant,
 };
@@ -30,6 +30,41 @@ struct Worker {
     started: Instant,
     /// Display label snapshot (file + lines) for the workers list.
     location: String,
+    /// Commit+push job to enqueue once the worker finishes successfully.
+    ///
+    /// `None` for plain workers (those just edit in place). When set, the job
+    /// is appended to the serialized commit queue rather than run inline, so
+    /// parallel workers never race on the git index or clobber each other's
+    /// push.
+    commit_job: Option<CommitJob>,
+}
+
+/// A pending commit+push for a finished worker.
+///
+/// These run one at a time (see [`Review::commit_in_flight`]) so that ten
+/// workers finishing at once still commit and push in a clean sequence.
+#[derive(Clone)]
+struct CommitJob {
+    /// Id of the annotation this commit resolves.
+    id: String,
+    /// Project-relative path of the single file to stage and commit.
+    file: String,
+    /// The commit message.
+    message: String,
+    /// Display label (file + lines) for the workers list.
+    location: String,
+}
+
+/// The commit+push currently executing (at most one at a time).
+struct CommitInFlight {
+    /// Id of the annotation being committed.
+    id: String,
+    /// Display label for the workers list.
+    location: String,
+    /// The spawned `git` shell pipeline.
+    child: Child,
+    /// When the commit started, for elapsed display.
+    started: Instant,
 }
 
 /// A finished worker kept in history (hidden unless "show all" is toggled).
@@ -40,6 +75,8 @@ struct FinishedWorker {
     success: bool,
     /// How long the worker ran, in seconds.
     elapsed_secs: u64,
+    /// Whether this worker was set to commit and push its changes.
+    commit: bool,
 }
 
 /// Review panel component.
@@ -53,6 +90,10 @@ pub(crate) struct Review {
     visible_indices: Vec<usize>,
     list_state: ListState,
     workers: Vec<Worker>,
+    /// Commit+push jobs waiting their turn, processed one at a time.
+    commit_queue: Vec<CommitJob>,
+    /// The commit+push currently running, if any.
+    commit_in_flight: Option<CommitInFlight>,
     /// History of completed workers, shown only when `show_resolved` is on.
     finished: Vec<FinishedWorker>,
     /// When false (default), resolved annotations and finished workers are hidden.
@@ -72,6 +113,8 @@ impl Review {
             visible_indices: Vec::new(),
             list_state: ListState::default(),
             workers: Vec::new(),
+            commit_queue: Vec::new(),
+            commit_in_flight: None,
             finished: Vec::new(),
             show_resolved: false,
             message: None,
@@ -137,17 +180,51 @@ impl Review {
         }
     }
 
-    /// Polls running workers and updates annotation status on completion.
+    /// Sets an annotation's status, clears its worker pid, and persists it.
+    fn set_annotation_status(&mut self, id: &str, status: AnnotationStatus) {
+        if let Some(annotation) = self.annotations.iter_mut().find(|a| a.id == id) {
+            annotation.status = status;
+            annotation.worker_pid = None;
+            _ = annotation.save();
+        }
+    }
+
+    /// Advances all background work: reaps finished edit-phase workers, reaps
+    /// the in-flight commit+push, and starts the next queued commit if idle.
     ///
-    /// A worker that exits successfully marks its annotation `resolved`; any
-    /// other outcome returns it to `open` so it can be retried.
+    /// A plain worker that exits successfully marks its annotation `resolved`;
+    /// a committing one instead enqueues a serialized commit+push and stays
+    /// `in_progress` until that pushes. Any failure returns the annotation to
+    /// `open` so it can be retried.
     pub(crate) fn poll_workers(&mut self) {
+        let mut changed = self.reap_workers();
+        changed |= self.reap_commit();
+        // Kick off the next queued commit whenever the single git slot is free.
+        if self.commit_in_flight.is_none() &&
+            let Some(job) = (!self.commit_queue.is_empty()).then(|| self.commit_queue.remove(0))
+        {
+            self.start_commit(job);
+            changed = true;
+        }
+
+        if changed {
+            let overflow = self.finished.len().saturating_sub(Self::FINISHED_HISTORY);
+            if overflow > 0 {
+                self.finished.drain(0..overflow);
+            }
+            self.update_visible();
+        }
+    }
+
+    /// Reaps edit-phase workers that have exited. Returns whether any did.
+    fn reap_workers(&mut self) -> bool {
         struct Done {
             index: usize,
             id: String,
             success: bool,
             location: String,
             elapsed: u64,
+            commit_job: Option<CommitJob>,
         }
         let mut done: Vec<Done> = Vec::new();
 
@@ -164,34 +241,127 @@ impl Review {
                     success,
                     location: worker.location.clone(),
                     elapsed: worker.started.elapsed().as_secs(),
+                    commit_job: worker.commit_job.clone(),
                 });
             }
         }
 
         if done.is_empty() {
-            return;
+            return false;
         }
 
         for entry in done.into_iter().rev() {
             self.workers.remove(entry.index);
-            if let Some(annotation) = self.annotations.iter_mut().find(|a| a.id == entry.id) {
-                annotation.status =
-                    if entry.success { AnnotationStatus::Resolved } else { AnnotationStatus::Open };
-                annotation.worker_pid = None;
-                _ = annotation.save();
+            match (entry.success, entry.commit_job) {
+                (true, Some(job)) => {
+                    // Edit succeeded: drop the worker pid but keep the
+                    // annotation in progress until its commit+push runs.
+                    self.set_annotation_status(&entry.id, AnnotationStatus::InProgress);
+                    self.commit_queue.push(job);
+                }
+                (true, None) => {
+                    self.set_annotation_status(&entry.id, AnnotationStatus::Resolved);
+                    self.finished.push(FinishedWorker {
+                        location: entry.location,
+                        success: true,
+                        elapsed_secs: entry.elapsed,
+                        commit: false,
+                    });
+                }
+                (false, commit_job) => {
+                    self.set_annotation_status(&entry.id, AnnotationStatus::Open);
+                    self.finished.push(FinishedWorker {
+                        location: entry.location,
+                        success: false,
+                        elapsed_secs: entry.elapsed,
+                        commit: commit_job.is_some(),
+                    });
+                }
             }
-            self.finished.push(FinishedWorker {
-                location: entry.location,
-                success: entry.success,
-                elapsed_secs: entry.elapsed,
-            });
         }
+        true
+    }
 
-        let overflow = self.finished.len().saturating_sub(Self::FINISHED_HISTORY);
-        if overflow > 0 {
-            self.finished.drain(0..overflow);
+    /// Reaps the in-flight commit+push, if it has finished. Returns whether it
+    /// did, recording the outcome and resolving (or reopening) the annotation.
+    fn reap_commit(&mut self) -> bool {
+        let Some(commit) = &mut self.commit_in_flight else {
+            return false;
+        };
+        let outcome = match commit.child.try_wait() {
+            Ok(Some(status)) => Some(status.success()),
+            Ok(None) => None,
+            Err(_) => Some(false),
+        };
+        let Some(success) = outcome else {
+            return false;
+        };
+
+        let id = commit.id.clone();
+        let location = commit.location.clone();
+        let elapsed = commit.started.elapsed().as_secs();
+        self.commit_in_flight = None;
+
+        let status = if success { AnnotationStatus::Resolved } else { AnnotationStatus::Open };
+        self.set_annotation_status(&id, status);
+        self.finished.push(FinishedWorker {
+            location,
+            success,
+            elapsed_secs: elapsed,
+            commit: true,
+        });
+        true
+    }
+
+    /// Spawns the serialized commit+push for a queued job.
+    ///
+    /// Runs in the repo root and stages, commits, then pushes only the job's
+    /// file. `git commit -- <file>` keeps the commit scoped to that one path
+    /// regardless of what else sits in the index. The push retries once behind
+    /// `git pull --rebase` in case the upstream moved. On spawn failure the
+    /// annotation is reopened. File and message travel via environment
+    /// variables so neither needs shell-escaping.
+    fn start_commit(&mut self, job: CommitJob) {
+        let log_dir = Annotation::dir(&self.root).join("logs");
+        _ = std::fs::create_dir_all(&log_dir);
+        let (stdout, stderr) =
+            match std::fs::File::create(log_dir.join(format!("{}-commit.log", job.id))) {
+                Ok(file) => match file.try_clone() {
+                    Ok(clone) => (Stdio::from(file), Stdio::from(clone)),
+                    Err(_) => (Stdio::null(), Stdio::null()),
+                },
+                Err(_) => (Stdio::null(), Stdio::null()),
+            };
+
+        let spawn_result = Command::new("sh")
+            .arg("-c")
+            .arg(
+                "git add -- \"$CAWD_FILE\" \
+                 && git commit -m \"$CAWD_COMMIT_MSG\" -- \"$CAWD_FILE\" \
+                 && { git push || { git pull --rebase && git push; }; }",
+            )
+            .env("CAWD_FILE", &job.file)
+            .env("CAWD_COMMIT_MSG", &job.message)
+            .current_dir(&self.root)
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr)
+            .spawn();
+
+        match spawn_result {
+            Ok(child) => {
+                self.commit_in_flight = Some(CommitInFlight {
+                    id: job.id,
+                    location: job.location,
+                    child,
+                    started: Instant::now(),
+                });
+            }
+            Err(e) => {
+                self.set_annotation_status(&job.id, AnnotationStatus::Open);
+                self.message = Some(format!("Failed to start commit: {e}"));
+            }
         }
-        self.update_visible();
     }
 
     /// Maps the list selection to an index into `annotations`.
@@ -263,12 +433,21 @@ impl Review {
     }
 
     /// Builds the prompt handed to the worker for an annotation.
-    fn build_prompt(annotation: &Annotation) -> String {
+    ///
+    /// When `commit` is set, cawd commits and pushes the changes itself once the
+    /// worker exits, so the worker is told to edit only and leave git alone.
+    fn build_prompt(annotation: &Annotation, commit: bool) -> String {
+        let git_note = if commit {
+            "\n\nDo not run git, commit, or push: only edit the files. \
+             cawd will commit and push the result for you."
+        } else {
+            ""
+        };
         format!(
             "A code reviewer left this comment on `{file}` (lines {lines}):\n\n\
              {comment}\n\n\
              The relevant code is:\n\n{excerpt}\n\n\
-             Please address this comment by editing the code accordingly.",
+             Please address this comment by editing the code accordingly.{git_note}",
             file = annotation.file,
             lines = annotation.lines,
             comment = annotation.comment,
@@ -276,14 +455,48 @@ impl Review {
         )
     }
 
+    /// Builds the conventional-commit message for a worker's auto-commit.
+    fn build_commit_message(annotation: &Annotation) -> String {
+        let summary = annotation.comment.lines().next().map_or("address review comment", str::trim);
+        format!("fix(review): {summary} ({} L{})", annotation.file, annotation.lines)
+    }
+
     /// Launches a headless Claude Code worker on the selected annotation.
     ///
-    /// The worker runs `claude -p <prompt> --dangerously-skip-permissions` from
-    /// the project root, with output streamed to `.cawd/logs/<id>.log`.
-    fn dispatch_worker(&mut self) {
+    /// When `commit` is set, the worker also commits and pushes its changes
+    /// once it finishes successfully.
+    fn dispatch_worker(&mut self, commit: bool) {
         let Some(index) = self.real_index() else {
             return;
         };
+        self.dispatch_worker_at(index, commit);
+    }
+
+    /// Dispatches a worker on the annotation with the given id, if present.
+    ///
+    /// Used when a worker is requested straight from the code viewer's comment
+    /// dialog (Ctrl+W / Ctrl+G), right after the annotation has been saved.
+    pub(crate) fn dispatch_worker_for_id(&mut self, id: &str, commit: bool) {
+        if let Some(index) = self.annotations.iter().position(|a| a.id == id) {
+            self.dispatch_worker_at(index, commit);
+        }
+    }
+
+    /// Builds the headless worker command:
+    /// `claude -p <prompt> --dangerously-skip-permissions`.
+    ///
+    /// The prompt is a direct argument (no shell), so it needs no escaping.
+    /// Committing workers do not run git here: their commit+push is queued and
+    /// run serially elsewhere (see [`Self::start_commit`]) so parallel workers
+    /// never race on the index or clobber each other's push.
+    fn worker_command(root: &Path, prompt: &str) -> Command {
+        let mut command = Command::new("claude");
+        command.arg("-p").arg(prompt).arg("--dangerously-skip-permissions").current_dir(root);
+        command
+    }
+
+    /// Launches a worker on the annotation at `index` in `annotations`.
+    fn dispatch_worker_at(&mut self, index: usize, commit: bool) {
         let Some(annotation) = self.annotations.get(index) else {
             return;
         };
@@ -294,7 +507,15 @@ impl Review {
 
         let id = annotation.id.clone();
         let location = Self::location_label(annotation);
-        let prompt = Self::build_prompt(annotation);
+        let prompt = Self::build_prompt(annotation, commit);
+        // A committing worker enqueues a serialized commit+push on success,
+        // staging only this annotation's file.
+        let commit_job = commit.then(|| CommitJob {
+            id: id.clone(),
+            file: annotation.file.clone(),
+            message: Self::build_commit_message(annotation),
+            location: location.clone(),
+        });
 
         let log_dir = Annotation::dir(&self.root).join("logs");
         if let Err(e) = std::fs::create_dir_all(&log_dir) {
@@ -313,11 +534,7 @@ impl Review {
             }
         };
 
-        let spawn_result = Command::new("claude")
-            .arg("-p")
-            .arg(&prompt)
-            .arg("--dangerously-skip-permissions")
-            .current_dir(&self.root)
+        let spawn_result = Self::worker_command(&self.root, &prompt)
             .stdin(Stdio::null())
             .stdout(stdout)
             .stderr(stderr)
@@ -331,13 +548,18 @@ impl Review {
                     annotation.worker_pid = Some(pid);
                     _ = annotation.save();
                 }
+                self.message = Some(if commit {
+                    format!("Worker started (pid {pid}); commits + pushes when done")
+                } else {
+                    format!("Worker started (pid {pid})")
+                });
                 self.workers.push(Worker {
                     annotation_id: id,
                     child,
                     started: Instant::now(),
                     location,
+                    commit_job,
                 });
-                self.message = Some(format!("Worker started (pid {pid})"));
             }
             Err(e) => {
                 self.message = Some(format!("Failed to start worker: {e}"));
@@ -367,7 +589,11 @@ impl Component for Review {
                 Action::None
             }
             KeyCode::Char('w') => {
-                self.dispatch_worker();
+                self.dispatch_worker(false);
+                Action::None
+            }
+            KeyCode::Char('W') => {
+                self.dispatch_worker(true);
                 Action::None
             }
             KeyCode::Char('d') => {
@@ -504,14 +730,15 @@ impl Review {
     /// Active workers are always shown; finished workers are listed only when
     /// "show all" (`a`) is toggled on.
     fn render_workers(&self, frame: &mut Frame<'_>, area: Rect) {
+        // Anything past the edit phase: the running commit plus those queued.
+        let pending = self.commit_queue.len() + usize::from(self.commit_in_flight.is_some());
+        let active = self.workers.len();
         let title = if self.show_resolved && !self.finished.is_empty() {
-            format!(
-                " \u{f085} Workers ({} active · {} done) ",
-                self.workers.len(),
-                self.finished.len()
-            )
+            format!(" \u{f085} Workers ({active} active · {} done) ", self.finished.len())
+        } else if pending > 0 {
+            format!(" \u{f085} Workers ({active} active · {pending} to push) ")
         } else {
-            format!(" \u{f085} Workers ({}) ", self.workers.len())
+            format!(" \u{f085} Workers ({active}) ")
         };
 
         let block = Block::default()
@@ -521,7 +748,7 @@ impl Review {
 
         let show_finished = self.show_resolved && !self.finished.is_empty();
 
-        if self.workers.is_empty() && !show_finished {
+        if self.workers.is_empty() && pending == 0 && !show_finished {
             let text = if self.finished.is_empty() {
                 " No active workers "
             } else {
@@ -542,6 +769,7 @@ impl Review {
             .iter()
             .map(|worker| {
                 let elapsed = worker.started.elapsed().as_secs();
+                let ship = if worker.commit_job.is_some() { "\u{21e1} " } else { "" };
                 ListItem::new(Line::from(vec![
                     Span::styled(
                         " \u{25d0} ",
@@ -551,6 +779,7 @@ impl Review {
                         format!("{:<18} ", worker.location),
                         Style::default().fg(Color::White),
                     ),
+                    Span::styled(ship, Style::default().fg(blue).add_modifier(Modifier::BOLD)),
                     Span::styled(
                         format!("pid {} ", worker.child.id()),
                         Style::default().fg(Color::DarkGray),
@@ -560,10 +789,36 @@ impl Review {
             })
             .collect();
 
+        // The commit+push currently running, then those waiting their turn.
+        if let Some(commit) = &self.commit_in_flight {
+            let elapsed = commit.started.elapsed().as_secs();
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(" \u{21e1} ", Style::default().fg(green).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("{:<18} ", commit.location),
+                    Style::default().fg(Color::White),
+                ),
+                Span::styled("pushing ", Style::default().fg(green)),
+                Span::styled(format!("{elapsed}s"), Style::default().fg(Color::DarkGray)),
+            ])));
+        }
+        for job in &self.commit_queue {
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(" \u{2026} ", Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("{:<18} ", job.location), Style::default().fg(Color::Gray)),
+                Span::styled("queued", Style::default().fg(Color::DarkGray)),
+            ])));
+        }
+
         if show_finished {
             for finished in self.finished.iter().rev() {
-                let (glyph, color, label) =
+                let (glyph, color, base_label) =
                     if finished.success { ("●", green, "done") } else { ("✗", red, "failed") };
+                let label = if finished.commit && finished.success {
+                    "pushed".to_owned()
+                } else {
+                    base_label.to_owned()
+                };
                 items.push(ListItem::new(Line::from(vec![
                     Span::styled(format!(" {glyph} "), Style::default().fg(color)),
                     Span::styled(

@@ -36,7 +36,7 @@ cawd [path]
 ```
 
 Switch panels by clicking, pressing `Tab`, or jumping straight to one with the number keys:
-`1` Explorer · `2` Changes · `3` Review · `4` the open file.
+`1` Explorer · `2` Changes · `3` Review · `4` the open file · `5` Notion.
 
 ## Reviewing changes
 
@@ -59,6 +59,43 @@ progress, green = done) — so you can see at a glance which lines a note refers
 The **Review** panel (press `3`) is your task board: it lists every annotation with a status badge
 (○ open · ◐ in progress · ● resolved) on top, and the live workers below. Resolved annotations are
 hidden by default — the title shows how many are _done_ and `a` reveals them.
+
+## Notion tickets
+
+The **Notion** panel (press `5`) shows tickets pulled read-only from a Notion page, so you can keep
+your task board next to the code without switching apps. Set `NOTION_TOKEN` in your environment (an
+internal integration with the _Read content_ capability, shared with the page) and cawd fetches the
+tickets on a background thread — the UI never blocks on the network.
+
+The panel has three sections: the **ticket list** (top-left), the **workers** pane (bottom-left), and
+the selected ticket's **detail** on the right — its properties (status, assignees, priority, dates…)
+followed by the page body, fetched lazily as you move the cursor.
+
+`Tab`/`Shift+Tab` cycle focus between the three sections (the focused one is outlined in cyan).
+`j`/`k` move the cursor in the focused list, or scroll the content when the detail is focused; `Enter`
+steps from the list into the detail, and `Esc`/`h` steps back. Open the ticket in your browser with
+`o`. Focus the workers pane and press `Enter` on a worker to open its log in the code viewer.
+
+Only **assigned** tickets are shown by default; press `a` to toggle unassigned ones, `/` to filter by
+title, `r` to refresh. The assignee property
+is auto-detected (it prefers lead/owner/assignee-style names) — override it with
+`NOTION_ASSIGNEE_PROP`. Point the panel at a different page or database with `NOTION_PAGE_ID` (a raw
+id or full URL). See `.env.example` for the full setup.
+
+### Dispatch a worker on a ticket
+
+Like the Review panel, you can fire a headless worker at a ticket: select it and press `w`. cawd
+launches `claude` from the project root with a **structured prompt** built from the ticket (title,
+properties, and page body) that tells the worker to:
+
+1. **Spec** the task — and if it's under-specified, stop and write only a spec to `.cawd/specs/`.
+2. **Implement** it, matching the repository's standards (CLAUDE.md / AGENTS.md if present).
+3. **Verify** with the project's checks (`make lint` / `make test`, or clippy + nextest).
+4. **Report** what it did.
+
+The workers pane shows each running worker (elapsed time, pid) and a short history of finished ones
+(done / failed). Output is streamed to `.cawd/logs/notion-<id>.log`. Notion stays **read-only** —
+worker state is tracked only locally, nothing is written back to your board.
 
 | Key   | Action                                       |
 | ----- | -------------------------------------------- |

@@ -3,7 +3,7 @@ use crate::{
     annotation::{Annotation, AnnotationStatus},
     components::Component,
 };
-use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -216,6 +216,42 @@ impl CodeViewer {
             .collect();
     }
 
+    /// Loads the full diff of a commit (`git show <hash>`) into the viewer.
+    ///
+    /// # Parameters
+    ///
+    /// * `hash` - The abbreviated or full commit hash to show.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success, or an error if `git show` fails.
+    pub(crate) fn load_commit_diff(&mut self, hash: &str) -> color_eyre::Result<()> {
+        let output = Command::new("git").args(["show", hash]).current_dir(&self.root).output()?;
+
+        let text = String::from_utf8_lossy(&output.stdout);
+        self.content = if text.trim().is_empty() {
+            vec![format!("No diff for {hash}")]
+        } else {
+            text.lines().map(String::from).collect()
+        };
+
+        // Use a synthetic path so the title reads `[DIFF] <hash>` and the
+        // welcome screen is not shown; nothing reads it as a real file in Diff
+        // mode.
+        self.file_path = Some(PathBuf::from(hash));
+        self.scroll_offset = 0;
+        self.search_query.clear();
+        self.search_matches.clear();
+        self.view_mode = ViewMode::Diff;
+        self.clear_selection();
+        self.status_message = None;
+        self.annotations.clear();
+
+        self.highlight_diff();
+
+        Ok(())
+    }
+
     /// Loads a git diff for the specified file.
     ///
     /// # Parameters
@@ -292,28 +328,30 @@ impl CodeViewer {
             .map(|line| {
                 line_num += 1;
                 let num_str = format!("{line_num:>4} │ ");
-                let content = if line.len() > 1 { &line[1..] } else { "" };
 
-                if line.starts_with('+') {
+                if let Some(rest) = line.strip_prefix('+') {
                     Line::from(vec![
                         Span::styled(num_str, Style::default().fg(green_fg).bg(green_bg)),
                         Span::styled(
-                            format!("+ {content}"),
+                            format!("+ {rest}"),
                             Style::default().fg(green_fg).bg(green_bg),
                         ),
                     ])
-                } else if line.starts_with('-') {
+                } else if let Some(rest) = line.strip_prefix('-') {
                     Line::from(vec![
                         Span::styled(num_str, Style::default().fg(red_fg).bg(red_bg)),
-                        Span::styled(
-                            format!("- {content}"),
-                            Style::default().fg(red_fg).bg(red_bg),
-                        ),
+                        Span::styled(format!("- {rest}"), Style::default().fg(red_fg).bg(red_bg)),
                     ])
                 } else {
+                    // Context lines start with a space (drop it); `git show`
+                    // header lines have no diff prefix, so keep them whole.
+                    let rest = match line.strip_prefix(' ') {
+                        Some(stripped) => stripped,
+                        None => line.as_str(),
+                    };
                     Line::from(vec![
                         Span::styled(num_str, Style::default().fg(Color::DarkGray)),
-                        Span::styled(format!("  {content}"), Style::default().fg(Color::White)),
+                        Span::styled(format!("  {rest}"), Style::default().fg(Color::White)),
                     ])
                 }
             })
@@ -539,14 +577,17 @@ impl CodeViewer {
     ///
     /// Writes a timestamped markdown file under `<root>/.cawd/` containing the
     /// file path, line range, the selected code excerpt, and the comment.
-    fn save_annotation(&mut self) {
+    ///
+    /// Returns the id of the saved annotation on success, so the caller can
+    /// dispatch a worker on it.
+    fn save_annotation(&mut self) -> Option<String> {
         let Some((start, end)) = self.selected_range() else {
             self.cancel_comment();
-            return;
+            return None;
         };
         let Some(file_path) = self.file_path.clone() else {
             self.cancel_comment();
-            return;
+            return None;
         };
 
         let now = chrono::Local::now();
@@ -587,7 +628,8 @@ impl CodeViewer {
             path: Annotation::dir(&self.root).join(format!("{id}.md")),
         };
 
-        self.status_message = Some(match annotation.save() {
+        let saved = annotation.save();
+        self.status_message = Some(match &saved {
             Ok(()) => format!("Annotation saved to .cawd/{id}.md"),
             Err(e) => format!("Failed to save annotation: {e}"),
         });
@@ -596,6 +638,8 @@ impl CodeViewer {
         self.comment_input.clear();
         self.clear_selection();
         self.reload_annotations();
+
+        saved.is_ok().then_some(id)
     }
 
     /// Scrolls the view so the given 1-based line is at the top.
@@ -965,8 +1009,10 @@ impl CodeViewer {
                 ),
             ]))
             .title_bottom(
-                Line::from(" Enter: save │ Esc: cancel ")
-                    .style(Style::default().fg(Color::DarkGray)),
+                Line::from(
+                    " Enter: save │ Ctrl+W: worker │ Ctrl+G: worker + commit/push │ Esc: cancel ",
+                )
+                .style(Style::default().fg(Color::DarkGray)),
             );
 
         let inner = block.inner(modal_area);
@@ -992,9 +1038,20 @@ impl Component for CodeViewer {
     )]
     fn handle_key_event(&mut self, key: KeyEvent) -> Action {
         if self.comment_mode {
+            // Ctrl+W: save the annotation and dispatch a worker on it at once.
+            // Ctrl+G: same, but the worker commits and pushes when it is done.
+            if key.modifiers.contains(KeyModifiers::CONTROL) &&
+                matches!(key.code, KeyCode::Char('w' | 'g'))
+            {
+                let commit = matches!(key.code, KeyCode::Char('g'));
+                return match self.save_annotation() {
+                    Some(id) => Action::DispatchWorker { id, commit },
+                    None => Action::None,
+                };
+            }
             match key.code {
                 KeyCode::Esc => self.cancel_comment(),
-                KeyCode::Enter => self.save_annotation(),
+                KeyCode::Enter => _ = self.save_annotation(),
                 KeyCode::Backspace => {
                     self.comment_input.pop();
                 }

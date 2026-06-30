@@ -8,6 +8,7 @@ use crate::{
         file_tree::FileTree,
         git_status::GitStatus,
         help_bar::{HelpBar, HelpContext},
+        notion::Notion,
         review::Review,
         search_modal::SearchModal,
     },
@@ -32,6 +33,8 @@ pub(crate) enum Panel {
     Review,
     /// Code viewer panel with syntax highlighting.
     CodeViewer,
+    /// Notion panel listing tickets from a configured page.
+    Notion,
 }
 
 /// Main application state container.
@@ -43,6 +46,7 @@ pub(crate) struct App {
     git_status: GitStatus,
     review: Review,
     code_viewer: CodeViewer,
+    notion: Notion,
     help_bar: HelpBar,
     search_modal: SearchModal,
     active_panel: Panel,
@@ -72,6 +76,7 @@ impl App {
             git_status: GitStatus::new(root.clone()),
             review: Review::new(root.clone()),
             code_viewer: CodeViewer::new(root.clone()),
+            notion: Notion::new(root.clone()),
             help_bar: HelpBar::new(),
             search_modal: SearchModal::new(root),
             active_panel: Panel::FileTree,
@@ -119,19 +124,42 @@ impl App {
 
         self.render_tabs(frame, tabs_area);
 
+        // The Notion panel is unrelated to the code view, so it takes the whole
+        // content area instead of sharing the left/right split.
+        if self.active_panel == Panel::Notion {
+            self.notion.render(frame, content_area, true);
+            self.help_bar.set_context(HelpContext {
+                search_mode: self.notion.is_search_mode(),
+                in_notion: true,
+                ..HelpContext::default()
+            });
+            self.help_bar.render(frame, help_area);
+            self.search_modal.render(frame);
+            return;
+        }
+
         let content_layout =
             Layout::horizontal([Constraint::Percentage(30), Constraint::Percentage(70)])
                 .split(content_area);
 
         if self.active_panel == Panel::Review {
             self.review.render(frame, content_layout[0], true);
+        } else if self.active_panel == Panel::GitStatus {
+            // Changes takes the whole left column: changed files on top, recent
+            // commits in a card below.
+            let left_layout =
+                Layout::vertical([Constraint::Percentage(60), Constraint::Percentage(40)])
+                    .split(content_layout[0]);
+
+            self.git_status.render(frame, left_layout[0], true);
+            self.git_status.render_commits(frame, left_layout[1]);
         } else {
             let left_layout =
                 Layout::vertical([Constraint::Percentage(75), Constraint::Percentage(25)])
                     .split(content_layout[0]);
 
             self.file_tree.render(frame, left_layout[0], self.active_panel == Panel::FileTree);
-            self.git_status.render(frame, left_layout[1], self.active_panel == Panel::GitStatus);
+            self.git_status.render(frame, left_layout[1], false);
         }
 
         self.code_viewer.render(frame, content_layout[1], self.active_panel == Panel::CodeViewer);
@@ -144,6 +172,7 @@ impl App {
             in_code_viewer: self.active_panel == Panel::CodeViewer && self.code_viewer.has_file(),
             in_git_status: self.active_panel == Panel::GitStatus,
             in_review: self.active_panel == Panel::Review,
+            in_notion: false,
         });
         self.help_bar.render(frame, help_area);
 
@@ -181,6 +210,12 @@ impl App {
             Style::default().fg(Color::DarkGray)
         };
 
+        let notion_style = if self.active_panel == Panel::Notion {
+            Style::default().fg(dark_text).bg(orange).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
         let file_name = self.code_viewer.file_name().map_or("Code", |it| it);
 
         let tabs_line = Line::from(vec![
@@ -191,6 +226,8 @@ impl App {
             Span::styled(" 3 \u{f075} Review ", review_style),
             Span::raw(" "),
             Span::styled(format!(" 4 \u{f15b} {file_name} "), code_style),
+            Span::raw(" "),
+            Span::styled(" 5 \u{f0e7} Notion ", notion_style),
             Span::raw("  "),
             Span::styled("Ctrl+P: Search", Style::default().fg(Color::DarkGray)),
         ]);
@@ -280,42 +317,48 @@ impl App {
                 }
 
                 if key.code == KeyCode::Tab {
+                    // Inside Notion, Tab first cycles its three sub-panes; only
+                    // once it wraps past the last does it move to the next panel.
+                    if self.active_panel == Panel::Notion && self.notion.focus_next() {
+                        return Ok(());
+                    }
                     self.active_panel = match self.active_panel {
                         Panel::FileTree => Panel::GitStatus,
                         Panel::GitStatus => Panel::Review,
                         Panel::Review => Panel::CodeViewer,
-                        Panel::CodeViewer => Panel::FileTree,
+                        Panel::CodeViewer => Panel::Notion,
+                        Panel::Notion => Panel::FileTree,
                     };
-                    if self.active_panel == Panel::Review {
-                        self.review.refresh();
-                    }
+                    self.on_panel_activated();
                     return Ok(());
                 }
 
                 if key.code == KeyCode::BackTab {
+                    if self.active_panel == Panel::Notion && self.notion.focus_prev() {
+                        return Ok(());
+                    }
                     self.active_panel = match self.active_panel {
-                        Panel::FileTree => Panel::CodeViewer,
+                        Panel::FileTree => Panel::Notion,
                         Panel::GitStatus => Panel::FileTree,
                         Panel::Review => Panel::GitStatus,
                         Panel::CodeViewer => Panel::Review,
+                        Panel::Notion => Panel::CodeViewer,
                     };
-                    if self.active_panel == Panel::Review {
-                        self.review.refresh();
-                    }
+                    self.on_panel_activated();
                     return Ok(());
                 }
 
-                // Direct panel jumps: 1 Explorer, 2 Changes, 3 Review, 4 File.
-                if let KeyCode::Char(digit @ '1'..='4') = key.code {
+                // Direct panel jumps: 1 Explorer, 2 Changes, 3 Review, 4 File,
+                // 5 Notion.
+                if let KeyCode::Char(digit @ '1'..='5') = key.code {
                     self.active_panel = match digit {
                         '1' => Panel::FileTree,
                         '2' => Panel::GitStatus,
                         '3' => Panel::Review,
-                        _ => Panel::CodeViewer,
+                        '4' => Panel::CodeViewer,
+                        _ => Panel::Notion,
                     };
-                    if self.active_panel == Panel::Review {
-                        self.review.refresh();
-                    }
+                    self.on_panel_activated();
                     return Ok(());
                 }
 
@@ -324,6 +367,7 @@ impl App {
                     Panel::GitStatus => self.git_status.handle_key_event(key),
                     Panel::Review => self.review.handle_key_event(key),
                     Panel::CodeViewer => self.code_viewer.handle_key_event(key),
+                    Panel::Notion => self.notion.handle_key_event(key),
                 };
 
                 self.handle_action(action)?;
@@ -336,7 +380,11 @@ impl App {
             }
         }
 
-        // Idle tick (no key/mouse event waiting): run periodic maintenance.
+        // Idle tick (no key/mouse event waiting): drain Notion fetch results
+        // (cheap, runs every tick so the panel stays responsive).
+        self.notion.poll();
+
+        // Periodic maintenance.
         if self.last_git_refresh.elapsed().as_secs() >= 2 {
             self.git_status.refresh();
             self.review.poll_workers();
@@ -348,6 +396,18 @@ impl App {
         }
 
         Ok(())
+    }
+
+    /// Refreshes side state when a panel gains focus via Tab/number keys.
+    fn on_panel_activated(&mut self) {
+        match self.active_panel {
+            Panel::Review => self.review.refresh(),
+            Panel::Notion => {
+                self.notion.refresh();
+                self.notion.focus_list();
+            }
+            Panel::FileTree | Panel::GitStatus | Panel::CodeViewer => {}
+        }
     }
 
     /// Processes an action returned by a component.
@@ -370,6 +430,13 @@ impl App {
                 }
                 self.active_panel = Panel::CodeViewer;
             }
+            Action::CommitSelected(hash) => {
+                // Open the commit's full diff in the code viewer, like a file.
+                if let Err(e) = self.code_viewer.load_commit_diff(&hash) {
+                    self.code_viewer.show_error(&e.to_string());
+                }
+                self.active_panel = Panel::CodeViewer;
+            }
             Action::AnnotationOpen { path, line } => {
                 // Keep focus on the review panel; show the code on the right.
                 if let Err(e) = self.code_viewer.load_file(path) {
@@ -378,11 +445,44 @@ impl App {
                     self.code_viewer.scroll_to_line(line);
                 }
             }
+            Action::DispatchWorker { id, commit } => {
+                // Load the just-saved annotation into the review panel, launch a
+                // worker on it, and reflect the in-progress state in the viewer.
+                self.review.refresh();
+                self.review.dispatch_worker_for_id(&id, commit);
+                self.code_viewer.refresh_annotations();
+            }
+            Action::OpenUrl(url) => {
+                Self::open_url(&url);
+            }
             Action::ToggleHidden |
             Action::EnterSearchMode |
             Action::ExitSearchMode |
             Action::None => {}
         }
         Ok(())
+    }
+
+    /// Opens a URL in the user's default browser, ignoring failures.
+    ///
+    /// Errors are deliberately swallowed: the TUI owns the terminal, so there
+    /// is nowhere useful to surface a spawn failure, and a missing opener must
+    /// not crash the app.
+    fn open_url(url: &str) {
+        #[cfg(target_os = "macos")]
+        let mut command = std::process::Command::new("open");
+        #[cfg(target_os = "linux")]
+        let mut command = std::process::Command::new("xdg-open");
+        #[cfg(target_os = "windows")]
+        let mut command = {
+            let mut c = std::process::Command::new("cmd");
+            c.args(["/C", "start", ""]);
+            c
+        };
+
+        command.arg(url);
+        match command.spawn() {
+            Ok(_) | Err(_) => {}
+        }
     }
 }

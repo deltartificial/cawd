@@ -23,7 +23,12 @@ multiple-versions = "deny"
 wildcards = "deny"
 highlight = "all"
 deny = [{ name = "openssl" }]
-skip = []
+# windows-sys ships several majors across the graph (clap, rustix, mio, tokio,
+# reqwest's hyper stack…). It is Windows-only and never compiled on the targets
+# cawd ships, so the duplication is benign.
+skip = [
+  { name = "windows-sys" },
+]
 skip-tree = []
 
 # ============================================================================

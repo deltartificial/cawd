@@ -20,6 +20,8 @@ pub(crate) struct HelpContext {
     pub(crate) in_git_status: bool,
     /// Whether the review panel is focused.
     pub(crate) in_review: bool,
+    /// Whether the Notion panel is focused.
+    pub(crate) in_notion: bool,
 }
 
 /// Help bar component showing keyboard shortcuts.
@@ -31,12 +33,19 @@ pub(crate) struct HelpBar {
     in_code_viewer: bool,
     in_git_status: bool,
     in_review: bool,
+    in_notion: bool,
 }
 
 impl HelpBar {
     /// Creates a new help bar instance.
     pub(crate) const fn new() -> Self {
-        Self { search_mode: false, in_code_viewer: false, in_git_status: false, in_review: false }
+        Self {
+            search_mode: false,
+            in_code_viewer: false,
+            in_git_status: false,
+            in_review: false,
+            in_notion: false,
+        }
     }
 
     /// Updates the context that determines which keybindings to show.
@@ -45,6 +54,7 @@ impl HelpBar {
         self.in_code_viewer = ctx.in_code_viewer;
         self.in_git_status = ctx.in_git_status;
         self.in_review = ctx.in_review;
+        self.in_notion = ctx.in_notion;
     }
 
     /// Renders the help bar to the terminal frame.
@@ -81,10 +91,21 @@ impl HelpBar {
                 ("j/k", "Navigate"),
                 ("Enter", "Open"),
                 ("w", "Worker"),
+                ("W", "Worker+push"),
                 ("s", "Status"),
                 ("a", "Show all"),
                 ("d", "Delete"),
-                ("Tab", "Panel"),
+                ("q", "Quit"),
+            ]
+        } else if self.in_notion {
+            vec![
+                ("Tab", "Pane"),
+                ("j/k", "Nav/Scroll"),
+                ("Enter", "Open"),
+                ("o", "Browser"),
+                ("w", "Worker"),
+                ("/", "Filter"),
+                ("a", "Assigned"),
                 ("q", "Quit"),
             ]
         } else if self.in_git_status {

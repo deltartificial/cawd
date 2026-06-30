@@ -22,6 +22,11 @@ pub(crate) enum Action {
     /// * `PathBuf` - The absolute path to the file to diff.
     DiffSelected(PathBuf),
 
+    /// A commit was selected in the Changes panel; show its full diff.
+    ///
+    /// Carries the abbreviated commit hash.
+    CommitSelected(String),
+
     /// An annotation was opened from the review panel.
     ///
     /// Loads the annotated file in the code viewer and scrolls to the line,
@@ -32,6 +37,21 @@ pub(crate) enum Action {
         /// 1-based line to scroll to.
         line: usize,
     },
+
+    /// Save-and-dispatch: an annotation was just created from the comment
+    /// dialog and a worker should be launched on it immediately.
+    DispatchWorker {
+        /// Id of the freshly saved annotation.
+        id: String,
+        /// When true, the worker commits and pushes its changes once it
+        /// finishes successfully.
+        commit: bool,
+    },
+
+    /// Open a URL in the user's default browser.
+    ///
+    /// Emitted by the Notion panel when a ticket is selected.
+    OpenUrl(String),
 
     /// Toggle visibility of hidden files.
     ToggleHidden,
