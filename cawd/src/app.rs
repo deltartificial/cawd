@@ -318,18 +318,22 @@ impl App {
 
                 // Tab/BackTab only move focus *within* the active panel;
                 // switching panels is done with the number keys (1-5). Only
-                // Notion has sub-panes, so Tab cycles those and is a no-op
-                // in the other panels.
+                // Review and Notion have sub-panes, so Tab cycles those and is a
+                // no-op in the single-pane panels.
                 if key.code == KeyCode::Tab {
-                    if self.active_panel == Panel::Notion {
-                        self.notion.focus_next();
+                    match self.active_panel {
+                        Panel::Notion => self.notion.focus_next(),
+                        Panel::Review => self.review.focus_next(),
+                        Panel::FileTree | Panel::GitStatus | Panel::CodeViewer => {}
                     }
                     return Ok(());
                 }
 
                 if key.code == KeyCode::BackTab {
-                    if self.active_panel == Panel::Notion {
-                        self.notion.focus_prev();
+                    match self.active_panel {
+                        Panel::Notion => self.notion.focus_prev(),
+                        Panel::Review => self.review.focus_prev(),
+                        Panel::FileTree | Panel::GitStatus | Panel::CodeViewer => {}
                     }
                     return Ok(());
                 }
@@ -387,7 +391,10 @@ impl App {
     /// Refreshes side state when a panel gains focus via Tab/number keys.
     fn on_panel_activated(&mut self) {
         match self.active_panel {
-            Panel::Review => self.review.refresh(),
+            Panel::Review => {
+                self.review.refresh();
+                self.review.focus_annotations();
+            }
             Panel::Notion => {
                 self.notion.refresh();
                 self.notion.focus_list();

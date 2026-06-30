@@ -20,6 +20,19 @@ use std::{
     time::Instant,
 };
 
+/// Which sub-pane of the review panel currently holds focus.
+///
+/// Cycled with Tab/BackTab while the Review panel is active; panel-level
+/// navigation (between Review and the other top-level panels) is done with the
+/// number keys, not Tab.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Focus {
+    /// The annotations list (top section).
+    Annotations,
+    /// The workers list (bottom section).
+    Workers,
+}
+
 /// A worker process addressing a specific annotation.
 struct Worker {
     /// Id of the annotation being worked on.
@@ -89,6 +102,10 @@ pub(crate) struct Review {
     /// Indices into `annotations` that are currently shown (filtered list).
     visible_indices: Vec<usize>,
     list_state: ListState,
+    /// Which sub-pane currently has focus (cycled with Tab).
+    focus: Focus,
+    /// Selection/scroll state for the workers list.
+    workers_state: ListState,
     workers: Vec<Worker>,
     /// Commit+push jobs waiting their turn, processed one at a time.
     commit_queue: Vec<CommitJob>,
@@ -112,6 +129,8 @@ impl Review {
             annotations: Vec::new(),
             visible_indices: Vec::new(),
             list_state: ListState::default(),
+            focus: Focus::Annotations,
+            workers_state: ListState::default(),
             workers: Vec::new(),
             commit_queue: Vec::new(),
             commit_in_flight: None,
@@ -389,6 +408,58 @@ impl Review {
         self.real_index().and_then(|i| self.annotations.get(i))
     }
 
+    /// Cycles focus to the next sub-pane (Tab), wrapping within the panel.
+    pub(crate) const fn focus_next(&mut self) {
+        self.focus = match self.focus {
+            Focus::Annotations => Focus::Workers,
+            Focus::Workers => Focus::Annotations,
+        };
+    }
+
+    /// Cycles focus to the previous sub-pane (`BackTab`), wrapping within the panel.
+    pub(crate) const fn focus_prev(&mut self) {
+        // Only two sub-panes, so previous is the same toggle as next.
+        self.focus_next();
+    }
+
+    /// Resets focus to the annotations list (called when the panel is activated).
+    pub(crate) const fn focus_annotations(&mut self) {
+        self.focus = Focus::Annotations;
+    }
+
+    /// Number of rows currently shown in the workers list.
+    ///
+    /// Mirrors the items built in [`Self::render_workers`] so selection
+    /// navigation stays in bounds.
+    fn workers_len(&self) -> usize {
+        self.workers.len() +
+            usize::from(self.commit_in_flight.is_some()) +
+            self.commit_queue.len() +
+            if self.show_resolved { self.finished.len() } else { 0 }
+    }
+
+    /// Moves the workers-list selection up, wrapping around.
+    fn workers_up(&mut self) {
+        let len = self.workers_len();
+        if len == 0 {
+            return;
+        }
+        let current = self.workers_state.selected().unwrap_or_default();
+        let new = if current == 0 { len - 1 } else { current - 1 };
+        self.workers_state.select(Some(new));
+    }
+
+    /// Moves the workers-list selection down, wrapping around.
+    fn workers_down(&mut self) {
+        let len = self.workers_len();
+        if len == 0 {
+            return;
+        }
+        let current = self.workers_state.selected().unwrap_or_default();
+        let new = if current >= len - 1 { 0 } else { current + 1 };
+        self.workers_state.select(Some(new));
+    }
+
     /// Moves the selection up, wrapping around.
     fn move_up(&mut self) {
         let len = self.visible_indices.len();
@@ -607,11 +678,17 @@ impl Component for Review {
     fn handle_key_event(&mut self, key: KeyEvent) -> Action {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
-                self.move_up();
+                match self.focus {
+                    Focus::Annotations => self.move_up(),
+                    Focus::Workers => self.workers_up(),
+                }
                 Action::None
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.move_down();
+                match self.focus {
+                    Focus::Annotations => self.move_down(),
+                    Focus::Workers => self.workers_down(),
+                }
                 Action::None
             }
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.open_selected(),
@@ -647,8 +724,8 @@ impl Component for Review {
         let chunks =
             Layout::vertical([Constraint::Percentage(70), Constraint::Percentage(30)]).split(area);
 
-        self.render_annotations(frame, chunks[0], focused);
-        self.render_workers(frame, chunks[1]);
+        self.render_annotations(frame, chunks[0], focused && self.focus == Focus::Annotations);
+        self.render_workers(frame, chunks[1], focused && self.focus == Focus::Workers);
     }
 }
 
@@ -760,7 +837,7 @@ impl Review {
     ///
     /// Active workers are always shown; finished workers are listed only when
     /// "show all" (`a`) is toggled on.
-    fn render_workers(&self, frame: &mut Frame<'_>, area: Rect) {
+    fn render_workers(&mut self, frame: &mut Frame<'_>, area: Rect, focused: bool) {
         // Anything past the edit phase: the running commit plus those queued.
         let pending = self.commit_queue.len() + usize::from(self.commit_in_flight.is_some());
         let active = self.workers.len();
@@ -772,10 +849,12 @@ impl Review {
             format!(" \u{f085} Workers ({active}) ")
         };
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray))
-            .title(title);
+        let border_style = if focused {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        let block = Block::default().borders(Borders::ALL).border_style(border_style).title(title);
 
         let show_finished = self.show_resolved && !self.finished.is_empty();
 
@@ -865,7 +944,18 @@ impl Review {
             }
         }
 
-        let list = List::new(items).block(block);
-        frame.render_widget(list, area);
+        // Only highlight a selected row while this sub-pane is focused, so the
+        // workers list reads as inert status when focus is on the annotations.
+        let highlight_style = if focused {
+            Style::default()
+                .bg(Color::Rgb(0xe6, 0x5a, 0x3d))
+                .fg(Color::Rgb(0x1a, 0x12, 0x0f))
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+
+        let list = List::new(items).block(block).highlight_style(highlight_style);
+        frame.render_stateful_widget(list, area, &mut self.workers_state);
     }
 }
