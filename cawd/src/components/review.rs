@@ -324,6 +324,20 @@ impl Review {
     fn start_commit(&mut self, job: CommitJob) {
         let log_dir = Annotation::dir(&self.root).join("logs");
         _ = std::fs::create_dir_all(&log_dir);
+
+        // Prefer the subject the worker authored over the comment-derived
+        // fallback: the former describes the change, the latter the complaint.
+        // Take the first non-empty line so a stray trailing newline or body the
+        // worker may add can't leak into the subject.
+        let msg_path = self.root.join(Self::commit_msg_rel_path(&job.id));
+        let generated = std::fs::read_to_string(&msg_path)
+            .ok()
+            .and_then(|raw| raw.lines().map(str::trim).find(|line| !line.is_empty()).map(str::to_owned));
+        _ = std::fs::remove_file(&msg_path);
+        let message = match generated {
+            Some(subject) => subject,
+            None => job.message,
+        };
         let (stdout, stderr) =
             match std::fs::File::create(log_dir.join(format!("{}-commit.log", job.id))) {
                 Ok(file) => match file.try_clone() {
@@ -341,7 +355,7 @@ impl Review {
                  && { git push || { git pull --rebase && git push; }; }",
             )
             .env("CAWD_FILE", &job.file)
-            .env("CAWD_COMMIT_MSG", &job.message)
+            .env("CAWD_COMMIT_MSG", &message)
             .current_dir(&self.root)
             .stdin(Stdio::null())
             .stdout(stdout)
@@ -438,10 +452,17 @@ impl Review {
     /// worker exits, so the worker is told to edit only and leave git alone.
     fn build_prompt(annotation: &Annotation, commit: bool) -> String {
         let git_note = if commit {
-            "\n\nDo not run git, commit, or push: only edit the files. \
-             cawd will commit and push the result for you."
+            format!(
+                "\n\nDo not run git, commit, or push: only edit the files. \
+                 cawd will commit and push the result for you. \
+                 After editing, write a single-line Conventional Commits subject \
+                 (e.g. `fix(scope): description`) that describes the change you \
+                 actually made — not the review comment — to the file `{path}`. \
+                 Keep it under 72 characters and write nothing else to that file.",
+                path = Self::commit_msg_rel_path(&annotation.id),
+            )
         } else {
-            ""
+            String::new()
         };
         format!(
             "A code reviewer left this comment on `{file}` (lines {lines}):\n\n\
@@ -455,7 +476,17 @@ impl Review {
         )
     }
 
-    /// Builds the conventional-commit message for a worker's auto-commit.
+    /// Project-relative path where a committing worker writes the Conventional
+    /// Commits subject it generates for its annotation. Relative because the
+    /// worker runs with the project root as its working directory.
+    fn commit_msg_rel_path(id: &str) -> String {
+        format!(".cawd/logs/{id}.commitmsg")
+    }
+
+    /// Fallback commit message, used only when the worker did not write a
+    /// generated subject. Derived from the reviewer's comment, which describes
+    /// the problem rather than the fix, so it reads poorly — hence the worker is
+    /// asked to author a proper subject (see [`Self::build_prompt`]).
     fn build_commit_message(annotation: &Annotation) -> String {
         let summary = annotation.comment.lines().next().map_or("address review comment", str::trim);
         format!("fix(review): {summary} ({} L{})", annotation.file, annotation.lines)
