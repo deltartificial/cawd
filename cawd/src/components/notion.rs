@@ -426,42 +426,21 @@ impl Notion {
         self.focus = Focus::List;
     }
 
-    /// Advances focus to the next sub-pane.
-    ///
-    /// Returns `true` while cycling inside the panel, and `false` once it wraps
-    /// past the last pane so the app can move on to the next top-level panel.
-    pub(crate) fn focus_next(&mut self) -> bool {
+    /// Advances focus to the next sub-pane, wrapping around within the panel.
+    pub(crate) fn focus_next(&mut self) {
         match self.focus {
-            Focus::List => {
-                self.set_focus(Focus::Detail);
-                true
-            }
-            Focus::Detail => {
-                self.set_focus(Focus::Workers);
-                true
-            }
-            Focus::Workers => {
-                self.set_focus(Focus::List);
-                false
-            }
+            Focus::List => self.set_focus(Focus::Detail),
+            Focus::Detail => self.set_focus(Focus::Workers),
+            Focus::Workers => self.set_focus(Focus::List),
         }
     }
 
-    /// Moves focus to the previous sub-pane (see [`Self::focus_next`]).
-    pub(crate) fn focus_prev(&mut self) -> bool {
+    /// Moves focus to the previous sub-pane, wrapping around within the panel.
+    pub(crate) fn focus_prev(&mut self) {
         match self.focus {
-            Focus::List => {
-                self.set_focus(Focus::List);
-                false
-            }
-            Focus::Detail => {
-                self.set_focus(Focus::List);
-                true
-            }
-            Focus::Workers => {
-                self.set_focus(Focus::Detail);
-                true
-            }
+            Focus::List => self.set_focus(Focus::Workers),
+            Focus::Detail => self.set_focus(Focus::List),
+            Focus::Workers => self.set_focus(Focus::Detail),
         }
     }
 

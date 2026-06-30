@@ -316,35 +316,21 @@ impl App {
                     return Ok(());
                 }
 
+                // Tab/BackTab only move focus *within* the active panel;
+                // switching panels is done with the number keys (1-5). Only
+                // Notion has sub-panes, so Tab cycles those and is a no-op
+                // in the other panels.
                 if key.code == KeyCode::Tab {
-                    // Inside Notion, Tab first cycles its three sub-panes; only
-                    // once it wraps past the last does it move to the next panel.
-                    if self.active_panel == Panel::Notion && self.notion.focus_next() {
-                        return Ok(());
+                    if self.active_panel == Panel::Notion {
+                        self.notion.focus_next();
                     }
-                    self.active_panel = match self.active_panel {
-                        Panel::FileTree => Panel::GitStatus,
-                        Panel::GitStatus => Panel::Review,
-                        Panel::Review => Panel::CodeViewer,
-                        Panel::CodeViewer => Panel::Notion,
-                        Panel::Notion => Panel::FileTree,
-                    };
-                    self.on_panel_activated();
                     return Ok(());
                 }
 
                 if key.code == KeyCode::BackTab {
-                    if self.active_panel == Panel::Notion && self.notion.focus_prev() {
-                        return Ok(());
+                    if self.active_panel == Panel::Notion {
+                        self.notion.focus_prev();
                     }
-                    self.active_panel = match self.active_panel {
-                        Panel::FileTree => Panel::Notion,
-                        Panel::GitStatus => Panel::FileTree,
-                        Panel::Review => Panel::GitStatus,
-                        Panel::CodeViewer => Panel::Review,
-                        Panel::Notion => Panel::CodeViewer,
-                    };
-                    self.on_panel_activated();
                     return Ok(());
                 }
 
