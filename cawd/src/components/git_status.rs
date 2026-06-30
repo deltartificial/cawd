@@ -106,6 +106,25 @@ impl GitFile {
     }
 }
 
+/// A single entry in the recent-commits card.
+#[derive(Debug, Clone)]
+struct CommitInfo {
+    /// Abbreviated commit hash.
+    hash: String,
+    /// First line of the commit message.
+    summary: String,
+}
+
+/// Which card inside the Changes panel currently holds the cursor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ChangesFocus {
+    /// The changed-files list (top card).
+    #[default]
+    Files,
+    /// The recent-commits list (bottom card).
+    Commits,
+}
+
 /// Git status panel component.
 ///
 /// Displays a list of files with uncommitted changes, supporting
@@ -117,6 +136,9 @@ pub(crate) struct GitStatus {
     search_query: String,
     search_mode: bool,
     filtered_indices: Vec<usize>,
+    commits: Vec<CommitInfo>,
+    commits_state: ListState,
+    focus: ChangesFocus,
 }
 
 impl GitStatus {
@@ -133,9 +155,35 @@ impl GitStatus {
             search_query: String::new(),
             search_mode: false,
             filtered_indices: Vec::new(),
+            commits: Vec::new(),
+            commits_state: ListState::default(),
+            focus: ChangesFocus::Files,
         };
         status.refresh();
         status
+    }
+
+    /// Reloads the most recent commits shown in the commits card.
+    fn refresh_commits(&mut self) {
+        self.commits.clear();
+        let log_output = Command::new("git")
+            .args(["log", "--pretty=format:%h%x1f%s", "-n", "40"])
+            .current_dir(&self.root)
+            .output();
+
+        if let Ok(output) = log_output &&
+            output.status.success()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let mut parts = line.split('\u{1f}');
+                let (Some(hash), Some(summary)) = (parts.next(), parts.next()) else {
+                    continue;
+                };
+                self.commits
+                    .push(CommitInfo { hash: hash.to_owned(), summary: summary.to_owned() });
+            }
+        }
     }
 
     /// Refreshes the list of changed files from git.
@@ -182,6 +230,7 @@ impl GitStatus {
         });
 
         self.update_filtered_indices();
+        self.refresh_commits();
 
         if let Some(path) = selected_path &&
             let Some(pos) = self.files.iter().position(|f| f.path == path) &&
@@ -256,40 +305,80 @@ impl GitStatus {
         self.files.get(idx)
     }
 
-    /// Moves selection up in the list.
+    /// Moves the cursor up, crossing from commits back into files at the top.
     fn move_up(&mut self) {
-        if self.visible_count() == 0 {
-            return;
+        match self.focus {
+            ChangesFocus::Files => {
+                if self.visible_count() == 0 {
+                    return;
+                }
+                let current = self.list_state.selected().unwrap_or_default();
+                if current > 0 {
+                    self.list_state.select(Some(current - 1));
+                }
+            }
+            ChangesFocus::Commits => {
+                let current = self.commits_state.selected().unwrap_or_default();
+                if current > 0 {
+                    self.commits_state.select(Some(current - 1));
+                } else if self.visible_count() > 0 {
+                    self.focus = ChangesFocus::Files;
+                    self.list_state.select(Some(self.visible_count() - 1));
+                }
+            }
         }
-        let current = self.list_state.selected().unwrap_or_default();
-        let new_idx =
-            if current == 0 { self.visible_count().saturating_sub(1) } else { current - 1 };
-        self.list_state.select(Some(new_idx));
     }
 
-    /// Moves selection down in the list.
+    /// Moves the cursor down, crossing from files into commits at the bottom.
     fn move_down(&mut self) {
-        if self.visible_count() == 0 {
-            return;
+        match self.focus {
+            ChangesFocus::Files => {
+                let count = self.visible_count();
+                let current = self.list_state.selected().unwrap_or_default();
+                if count > 0 && current + 1 < count {
+                    self.list_state.select(Some(current + 1));
+                } else if !self.search_mode && !self.commits.is_empty() {
+                    self.focus = ChangesFocus::Commits;
+                    self.commits_state.select(Some(0));
+                }
+            }
+            ChangesFocus::Commits => {
+                if self.commits.is_empty() {
+                    return;
+                }
+                let current = self.commits_state.selected().unwrap_or_default();
+                if current + 1 < self.commits.len() {
+                    self.commits_state.select(Some(current + 1));
+                }
+            }
         }
-        let current = self.list_state.selected().unwrap_or_default();
-        let new_idx =
-            if current >= self.visible_count().saturating_sub(1) { 0 } else { current + 1 };
-        self.list_state.select(Some(new_idx));
     }
 
-    /// Selects the current file for diff viewing.
-    fn select_file(&self) -> Action {
-        if let Some(file) = self.selected_file() {
-            return Action::DiffSelected(file.path.clone());
+    /// Opens the focused item: a file diff, or a commit's full diff.
+    fn select(&self) -> Action {
+        match self.focus {
+            ChangesFocus::Files => {
+                if let Some(file) = self.selected_file() {
+                    return Action::DiffSelected(file.path.clone());
+                }
+                Action::None
+            }
+            ChangesFocus::Commits => {
+                if let Some(sel) = self.commits_state.selected() &&
+                    let Some(commit) = self.commits.get(sel)
+                {
+                    return Action::CommitSelected(commit.hash.clone());
+                }
+                Action::None
+            }
         }
-        Action::None
     }
 
     /// Enters search/filter mode.
     pub(crate) fn enter_search_mode(&mut self) {
         self.search_mode = true;
         self.search_query.clear();
+        self.focus = ChangesFocus::Files;
         self.update_filtered_indices();
     }
 
@@ -337,7 +426,7 @@ impl Component for GitStatus {
                 }
                 KeyCode::Enter => {
                     self.search_mode = false;
-                    self.select_file()
+                    self.select()
                 }
                 KeyCode::Backspace => {
                     self.search_backspace();
@@ -367,7 +456,7 @@ impl Component for GitStatus {
                     self.move_down();
                     Action::None
                 }
-                KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.select_file(),
+                KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.select(),
                 KeyCode::Char('/') => {
                     self.enter_search_mode();
                     Action::EnterSearchMode
@@ -382,7 +471,7 @@ impl Component for GitStatus {
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect, focused: bool) {
-        let border_style = if focused {
+        let border_style = if focused && self.focus == ChangesFocus::Files {
             Style::default().fg(Color::Cyan)
         } else {
             Style::default().fg(Color::DarkGray)
@@ -439,5 +528,50 @@ impl Component for GitStatus {
         let list = List::new(items).block(block).highlight_style(highlight_style);
 
         frame.render_stateful_widget(list, area, &mut self.list_state);
+    }
+}
+
+impl GitStatus {
+    /// Renders the recent-commits card, shown below the changed files when the
+    /// Changes panel has the left column to itself.
+    pub(crate) fn render_commits(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        let orange = Color::Rgb(0xff, 0x7a, 0x5c);
+        let active = self.focus == ChangesFocus::Commits;
+        let border_style = if active {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(border_style)
+            .title(format!(" \u{f417} Commits ({}) ", self.commits.len()));
+
+        if self.commits.is_empty() {
+            let paragraph = ratatui::widgets::Paragraph::new(" No commits ")
+                .block(block)
+                .style(Style::default().fg(Color::DarkGray));
+            frame.render_widget(paragraph, area);
+            return;
+        }
+
+        let items: Vec<ListItem<'_>> = self
+            .commits
+            .iter()
+            .map(|commit| {
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!(" {} ", commit.hash), Style::default().fg(orange)),
+                    Span::styled(&commit.summary, Style::default().fg(Color::Gray)),
+                ]))
+            })
+            .collect();
+
+        let highlight_style = Style::default()
+            .bg(Color::Rgb(0xe6, 0x5a, 0x3d))
+            .fg(Color::Rgb(0x1a, 0x12, 0x0f))
+            .add_modifier(Modifier::BOLD);
+
+        let list = List::new(items).block(block).highlight_style(highlight_style);
+        frame.render_stateful_widget(list, area, &mut self.commits_state);
     }
 }

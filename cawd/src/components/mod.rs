@@ -7,6 +7,7 @@ pub(crate) mod code_viewer;
 pub(crate) mod file_tree;
 pub(crate) mod git_status;
 pub(crate) mod help_bar;
+pub(crate) mod notion;
 pub(crate) mod review;
 pub(crate) mod search_modal;
 
